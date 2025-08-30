@@ -131,7 +131,7 @@ mss>=9.0.1
 │   ├── styles/
 │   │   └── modern_flat.qss     # 样式文件
 │   └── icons/
-│       └── checkmark_16.svg    # 图标资源
+│       └── custom_icon.ico.svg    # 图标资源
 ├── tools/                      # 诊断与开发辅助脚本
 │   ├── debug_coordinates.py
 │   ├── diagnose_multiscreen_click.py

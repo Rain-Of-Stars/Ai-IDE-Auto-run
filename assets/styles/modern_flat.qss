@@ -77,7 +77,7 @@ QCheckBox::indicator:unchecked { border: 1px solid #3C3F44; background: #32343A;
 QCheckBox::indicator:checked {
   border: 1px solid #2F80ED;
   background: #2F80ED;
-  image: url(icons/custom_icon.ico.svg);
+  image: url(icons/assets/icons/icons/custom_icon.ico);
 }
 /* 悬停反馈 */
 QCheckBox::indicator:unchecked:hover { border-color: #2F80ED; }
