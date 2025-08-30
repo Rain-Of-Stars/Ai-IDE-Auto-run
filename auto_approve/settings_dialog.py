@@ -284,14 +284,12 @@ class RegionSnipDialog(QtWidgets.QDialog):
             # 清除选区为透明
             p.setCompositionMode(QtGui.QPainter.CompositionMode_Clear)
             p.fillRect(rect, QtCore.Qt.transparent)
-            # 恢复正常模式后绘制边框与尺寸提示
+            # 恢复正常模式后仅绘制边框（不再显示尺寸文字）
             p.setCompositionMode(QtGui.QPainter.CompositionMode_SourceOver)
             p.setPen(QtGui.QPen(QtGui.QColor(0, 120, 215), 2))
             p.setBrush(QtCore.Qt.NoBrush)
             p.drawRect(rect)
-            p.setPen(QtGui.QPen(QtGui.QColor(255, 255, 255)))
-            p.setFont(self._hint_font)
-            p.drawText(rect.adjusted(4, 4, -4, -4), QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop, f"{rect.width()}x{rect.height()}")
+            # 不显示大小文字，避免视觉遮挡
         p.end()
 
     def mousePressEvent(self, e: QtGui.QMouseEvent) -> None:
