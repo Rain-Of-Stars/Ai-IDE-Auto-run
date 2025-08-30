@@ -7,9 +7,56 @@ from __future__ import annotations
 import os
 from typing import Tuple, List
 
-from PySide6 import QtWidgets, QtCore
+from PySide6 import QtWidgets, QtCore, QtGui
 
 from auto_approve.config_manager import AppConfig, ROI, save_config, load_config
+
+
+class CustomCheckBox(QtWidgets.QCheckBox):
+    """自定义复选框，使用代码绘制白色✓符号，不依赖图标资源文件。"""
+    
+    def __init__(self, text="", parent=None):
+        super().__init__(text, parent)
+        
+    def paintEvent(self, event):
+        """重写绘制事件，自定义绘制选中状态的白色✓符号。"""
+        # 先调用父类的绘制方法绘制基础样式
+        super().paintEvent(event)
+        
+        # 如果选中状态，绘制白色✓符号
+        if self.isChecked():
+            painter = QtGui.QPainter(self)
+            painter.setRenderHint(QtGui.QPainter.Antialiasing)
+            
+            # 获取指示器的矩形区域
+            option = QtWidgets.QStyleOptionButton()
+            self.initStyleOption(option)
+            indicator_rect = self.style().subElementRect(
+                QtWidgets.QStyle.SE_CheckBoxIndicator, option, self
+            )
+            
+            # 设置白色画笔绘制✓符号
+            painter.setPen(QtGui.QPen(QtGui.QColor(255, 255, 255), 2, QtCore.Qt.SolidLine, QtCore.Qt.RoundCap, QtCore.Qt.RoundJoin))
+            
+            # 计算✓符号的坐标
+            center_x = indicator_rect.center().x()
+            center_y = indicator_rect.center().y()
+            size = min(indicator_rect.width(), indicator_rect.height()) * 0.6
+            
+            # 绘制✓符号的两条线段
+            # 第一条线段：从左下到中心
+            x1 = center_x - size * 0.3
+            y1 = center_y + size * 0.1
+            x2 = center_x - size * 0.1
+            y2 = center_y + size * 0.3
+            painter.drawLine(QtCore.QPointF(x1, y1), QtCore.QPointF(x2, y2))
+            
+            # 第二条线段：从中心到右上
+            x3 = center_x + size * 0.4
+            y3 = center_y - size * 0.2
+            painter.drawLine(QtCore.QPointF(x2, y2), QtCore.QPointF(x3, y3))
+            
+            painter.end()
 
 
 def _parse_pair(text: str, typ=float) -> Tuple:
@@ -63,14 +110,14 @@ class SettingsDialog(QtWidgets.QDialog):
         self.sb_monitor = QtWidgets.QSpinBox(); self.sb_monitor.setRange(1, 16); self.sb_monitor.setValue(self.cfg.monitor_index); self.sb_monitor.setToolTip("mss监视器索引，1为主屏")
         self.sb_interval = QtWidgets.QSpinBox(); self.sb_interval.setRange(100, 10000); self.sb_interval.setSingleStep(50); self.sb_interval.setSuffix(" ms"); self.sb_interval.setValue(self.cfg.interval_ms); self.sb_interval.setToolTip("扫描间隔越大越省电")
         self.sb_min_det = QtWidgets.QSpinBox(); self.sb_min_det.setRange(1, 10); self.sb_min_det.setValue(self.cfg.min_detections)
-        self.cb_auto_start = QtWidgets.QCheckBox("启动后自动开始扫描"); self.cb_auto_start.setChecked(self.cfg.auto_start_scan)
-        self.cb_logging = QtWidgets.QCheckBox("启用日志到 log.txt"); self.cb_logging.setChecked(self.cfg.enable_logging)
+        self.cb_auto_start = CustomCheckBox("启动后自动开始扫描"); self.cb_auto_start.setChecked(self.cfg.auto_start_scan)
+        self.cb_logging = CustomCheckBox("启用日志到 log.txt"); self.cb_logging.setChecked(self.cfg.enable_logging)
 
         # 匹配参数
         self.ds_threshold = QtWidgets.QDoubleSpinBox(); self.ds_threshold.setRange(0.00, 1.00); self.ds_threshold.setSingleStep(0.01); self.ds_threshold.setDecimals(2); self.ds_threshold.setValue(self.cfg.threshold); self.ds_threshold.setToolTip("越大越严格，建议0.85~0.95")
         self.ds_cooldown = QtWidgets.QDoubleSpinBox(); self.ds_cooldown.setRange(0.0, 60.0); self.ds_cooldown.setSingleStep(0.5); self.ds_cooldown.setSuffix(" s"); self.ds_cooldown.setValue(self.cfg.cooldown_s); self.ds_cooldown.setToolTip("命中后冷却避免重复点击")
-        self.cb_gray = QtWidgets.QCheckBox("灰度匹配（更省电）"); self.cb_gray.setChecked(self.cfg.grayscale)
-        self.cb_multiscale = QtWidgets.QCheckBox("多尺度匹配"); self.cb_multiscale.setChecked(self.cfg.multi_scale)
+        self.cb_gray = CustomCheckBox("灰度匹配（更省电）"); self.cb_gray.setChecked(self.cfg.grayscale)
+        self.cb_multiscale = CustomCheckBox("多尺度匹配"); self.cb_multiscale.setChecked(self.cfg.multi_scale)
         self.le_scales = QtWidgets.QLineEdit(",".join(f"{v:g}" for v in self.cfg.scales))
         self.le_scales.setPlaceholderText("示例：1.0,1.25,0.8（仅多尺度开启时生效）")
         self.le_scales.setToolTip("倍率列表按顺序尝试，建议包含1.0")
@@ -79,15 +126,15 @@ class SettingsDialog(QtWidgets.QDialog):
         self.le_offset = QtWidgets.QLineEdit(f"{self.cfg.click_offset[0]},{self.cfg.click_offset[1]}")
         self.le_offset.setPlaceholderText("示例：0,0 或 10,-6")
         self.le_offset.setToolTip("相对命中点的像素偏移，支持负数")
-        self.cb_verify_window = QtWidgets.QCheckBox("点击前验证窗口"); self.cb_verify_window.setChecked(self.cfg.verify_window_before_click)
-        self.cb_coord_correction = QtWidgets.QCheckBox("启用坐标校正"); self.cb_coord_correction.setChecked(self.cfg.enable_coordinate_correction)
+        self.cb_verify_window = CustomCheckBox("点击前验证窗口"); self.cb_verify_window.setChecked(self.cfg.verify_window_before_click)
+        self.cb_coord_correction = CustomCheckBox("启用坐标校正"); self.cb_coord_correction.setChecked(self.cfg.enable_coordinate_correction)
         self.le_coord_offset = QtWidgets.QLineEdit(f"{self.cfg.coordinate_offset[0]},{self.cfg.coordinate_offset[1]}"); self.le_coord_offset.setPlaceholderText("示例：0,0")
         self.le_coord_offset.setToolTip("多屏校正时的全局坐标偏移")
         self.combo_click_method = QtWidgets.QComboBox(); self.combo_click_method.addItems(["message", "simulate"]); self.combo_click_method.setCurrentText(self.cfg.click_method)
         self.combo_transform_mode = QtWidgets.QComboBox(); self.combo_transform_mode.addItems(["auto", "manual", "disabled"]); self.combo_transform_mode.setCurrentText(self.cfg.coordinate_transform_mode)
 
         # 多屏幕
-        self.cb_multi_screen_polling = QtWidgets.QCheckBox("启用多屏幕轮询搜索"); self.cb_multi_screen_polling.setChecked(self.cfg.enable_multi_screen_polling)
+        self.cb_multi_screen_polling = CustomCheckBox("启用多屏幕轮询搜索"); self.cb_multi_screen_polling.setChecked(self.cfg.enable_multi_screen_polling)
         self.cb_multi_screen_polling.setToolTip("在所有屏幕上轮询搜索目标，适用于多屏幕环境")
         self.sb_polling_interval = QtWidgets.QSpinBox(); self.sb_polling_interval.setRange(500, 5000); self.sb_polling_interval.setSingleStep(100); self.sb_polling_interval.setSuffix(" ms"); self.sb_polling_interval.setValue(self.cfg.screen_polling_interval_ms)
 
@@ -99,10 +146,10 @@ class SettingsDialog(QtWidgets.QDialog):
         self.btn_roi_reset = QtWidgets.QPushButton("重置为整屏")
 
         # 调试
-        self.cb_debug = QtWidgets.QCheckBox("启用调试模式"); self.cb_debug.setChecked(self.cfg.debug_mode)
-        self.cb_save_debug = QtWidgets.QCheckBox("保存调试截图"); self.cb_save_debug.setChecked(self.cfg.save_debug_images)
+        self.cb_debug = CustomCheckBox("启用调试模式"); self.cb_debug.setChecked(self.cfg.debug_mode)
+        self.cb_save_debug = CustomCheckBox("保存调试截图"); self.cb_save_debug.setChecked(self.cfg.save_debug_images)
         self.le_debug_dir = QtWidgets.QLineEdit(self.cfg.debug_image_dir)
-        self.cb_enhanced_finding = QtWidgets.QCheckBox("增强窗口查找"); self.cb_enhanced_finding.setChecked(self.cfg.enhanced_window_finding)
+        self.cb_enhanced_finding = CustomCheckBox("增强窗口查找"); self.cb_enhanced_finding.setChecked(self.cfg.enhanced_window_finding)
 
         # ============ 构建页面（右侧堆叠）============
         self.stack = QtWidgets.QStackedWidget()

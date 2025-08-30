@@ -73,12 +73,11 @@ QCheckBox::indicator {
 }
 /* 未选中：深色底 + 细边 */
 QCheckBox::indicator:unchecked { border: 1px solid #3C3F44; background: #32343A; }
-/* 选中：蓝底 + 白色对勾图标 */
+/* 选中：蓝底 + 代码绘制的白色对勾 */
 QCheckBox::indicator:checked {
   border: 1px solid #2F80ED;
   background: #2F80ED;
-  /* 使用简约白色对勾图标（透明底） */
-  image: url(assets/icons/icons/check_white_16.png);
+  /* 移除图标资源依赖，改为代码绘制 */
 }
 /* 悬停反馈 */
 QCheckBox::indicator:unchecked:hover { border-color: #2F80ED; }
