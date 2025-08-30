@@ -58,6 +58,91 @@ class CustomCheckBox(QtWidgets.QCheckBox):
             
             painter.end()
 
+class ImagePreviewDialog(QtWidgets.QDialog):
+    """简单的图片预览对话框，随窗口大小自适应缩放。"""
+    def __init__(self, pixmap: QtGui.QPixmap, path: str, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(f"预览 - {os.path.basename(path)}")
+        self.resize(720, 540)
+        self._pixmap = pixmap
+        self._label = QtWidgets.QLabel()
+        self._label.setAlignment(QtCore.Qt.AlignCenter)
+        v = QtWidgets.QVBoxLayout(self)
+        v.setContentsMargins(8, 8, 8, 8)
+        v.addWidget(self._label, 1)
+        self._update_view()
+
+    def resizeEvent(self, e: QtGui.QResizeEvent) -> None:
+        super().resizeEvent(e)
+        self._update_view()
+
+    def _update_view(self):
+        if self._pixmap.isNull():
+            self._label.setText("无法加载图片")
+            return
+        scaled = self._pixmap.scaled(self._label.size(), QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
+        self._label.setPixmap(scaled)
+
+class RegionSnipDialog(QtWidgets.QDialog):
+    """全屏截图取框对话框：左键拖拽选择；右键或Esc取消。"""
+    def __init__(self, screen: QtGui.QScreen, background: QtGui.QPixmap, parent=None):
+        super().__init__(parent)
+        self.setWindowFlags(QtCore.Qt.FramelessWindowHint | QtCore.Qt.Dialog)
+        self.setWindowModality(QtCore.Qt.ApplicationModal)
+        self.setAttribute(QtCore.Qt.WA_TranslucentBackground, True)
+        self._screen = screen
+        self._bg = background
+        self._origin = None
+        self._current = None
+        self.selected_pixmap: QtGui.QPixmap | None = None
+        self.setGeometry(screen.geometry())
+        self._hint_font = self.font()
+        self._hint_font.setPointSize(self._hint_font.pointSize() + 1)
+
+    def paintEvent(self, event: QtGui.QPaintEvent) -> None:
+        p = QtGui.QPainter(self)
+        # 绘制屏幕截图作为背景
+        p.drawPixmap(0, 0, self.width(), self.height(), self._bg)
+        # 半透明遮罩
+        p.fillRect(self.rect(), QtGui.QColor(0, 0, 0, 100))
+        # 选择区域高亮与尺寸提示
+        if self._origin and self._current:
+            rect = QtCore.QRect(self._origin, self._current).normalized()
+            p.drawPixmap(rect, self._bg, rect)
+            p.setPen(QtGui.QPen(QtGui.QColor(0, 120, 215), 2))
+            p.setBrush(QtCore.Qt.NoBrush)
+            p.drawRect(rect)
+            p.setPen(QtGui.QPen(QtGui.QColor(255, 255, 255)))
+            p.setFont(self._hint_font)
+            p.drawText(rect.adjusted(4, 4, -4, -4), QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop, f"{rect.width()}x{rect.height()}")
+        p.end()
+
+    def mousePressEvent(self, e: QtGui.QMouseEvent) -> None:
+        if e.button() == QtCore.Qt.LeftButton:
+            self._origin = e.pos()
+            self._current = e.pos()
+            self.update()
+
+    def mouseMoveEvent(self, e: QtGui.QMouseEvent) -> None:
+        if self._origin:
+            self._current = e.pos()
+            self.update()
+
+    def mouseReleaseEvent(self, e: QtGui.QMouseEvent) -> None:
+        if e.button() == QtCore.Qt.LeftButton and self._origin and self._current:
+            rect = QtCore.QRect(self._origin, self._current).normalized()
+            if rect.width() > 2 and rect.height() > 2:
+                # 处理高DPI，按设备像素比换算源区域
+                dpr = self._bg.devicePixelRatio()
+                src = QtCore.QRect(int(rect.x() * dpr), int(rect.y() * dpr), int(rect.width() * dpr), int(rect.height() * dpr))
+                self.selected_pixmap = self._bg.copy(src)
+            self.accept()
+        elif e.button() == QtCore.Qt.RightButton:
+            self.reject()
+
+    def keyPressEvent(self, e: QtGui.QKeyEvent) -> None:
+        if e.key() == QtCore.Qt.Key_Escape:
+            self.reject()
 
 def _parse_pair(text: str, typ=float) -> Tuple:
     """解析形如 "a,b" 的文本为二元组，允许空格。"""
@@ -94,6 +179,14 @@ class SettingsDialog(QtWidgets.QDialog):
         # 模板列表（支持多图）
         self.list_templates = QtWidgets.QListWidget()
         self.list_templates.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
+        # 纵向滚动：禁用横向滚动并启用文本换行
+        self.list_templates.setWordWrap(True)
+        self.list_templates.setTextElideMode(QtCore.Qt.ElideNone)
+        self.list_templates.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        self.list_templates.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+        self.list_templates.setVerticalScrollMode(QtWidgets.QAbstractItemView.ScrollPerPixel)
+        self.list_templates.setResizeMode(QtWidgets.QListView.Adjust)
+        self.list_templates.setUniformItemSizes(False)
         init_paths: List[str] = []
         if getattr(self.cfg, "template_paths", None):
             init_paths = list(self.cfg.template_paths)
@@ -103,6 +196,8 @@ class SettingsDialog(QtWidgets.QDialog):
         for p in init_paths:
             self.list_templates.addItem(p)
         self.btn_add_tpl = QtWidgets.QPushButton("添加图片…")
+        self.btn_preview_tpl = QtWidgets.QPushButton("预览")
+        self.btn_capture_tpl = QtWidgets.QPushButton("截图添加")
         self.btn_del_tpl = QtWidgets.QPushButton("删除选中")
         self.btn_clear_tpl = QtWidgets.QPushButton("清空列表")
 
@@ -164,6 +259,8 @@ class SettingsDialog(QtWidgets.QDialog):
         vtpl.addWidget(self.list_templates, 1)
         tpl_btns = QtWidgets.QHBoxLayout()
         tpl_btns.addWidget(self.btn_add_tpl)
+        tpl_btns.addWidget(self.btn_preview_tpl)
+        tpl_btns.addWidget(self.btn_capture_tpl)
         tpl_btns.addWidget(self.btn_del_tpl)
         tpl_btns.addWidget(self.btn_clear_tpl)
         tpl_btns.addStretch(1)
@@ -315,6 +412,8 @@ class SettingsDialog(QtWidgets.QDialog):
 
         # 信号连接
         self.btn_add_tpl.clicked.connect(self._on_add_templates)
+        self.btn_preview_tpl.clicked.connect(self._on_preview_template)
+        self.btn_capture_tpl.clicked.connect(self._on_screenshot_add_template)
         self.btn_del_tpl.clicked.connect(self._on_remove_selected)
         self.btn_clear_tpl.clicked.connect(self._on_clear_templates)
         self.btn_roi_reset.clicked.connect(self._on_roi_reset)
@@ -350,6 +449,70 @@ class SettingsDialog(QtWidgets.QDialog):
     def _on_clear_templates(self):
         """清空模板列表。"""
         self.list_templates.clear()
+
+    def _ensure_assets_images_dir(self) -> Tuple[str, str]:
+        """确保 assets/images 目录存在，返回(绝对路径, 相对路径)。"""
+        proj_root = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
+        images_abs = os.path.join(proj_root, "assets", "images")
+        images_rel = os.path.join("assets", "images")
+        os.makedirs(images_abs, exist_ok=True)
+        return images_abs, images_rel
+
+    def _resolve_template_path(self, p: str) -> str:
+        """解析模板条目的真实绝对路径。"""
+        p = (p or "").strip()
+        if not p:
+            return ""
+        if os.path.isabs(p) and os.path.exists(p):
+            return p
+        # 工作目录相对路径
+        wd_path = os.path.abspath(os.path.join(os.getcwd(), p))
+        if os.path.exists(wd_path):
+            return wd_path
+        # 项目根下的 assets/images
+        images_abs, _ = self._ensure_assets_images_dir()
+        candidate = os.path.join(images_abs, os.path.basename(p))
+        if os.path.exists(candidate):
+            return candidate
+        # 项目根相对路径
+        proj_root = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
+        other = os.path.abspath(os.path.join(proj_root, p))
+        if os.path.exists(other):
+            return other
+        return p
+
+    def _on_preview_template(self):
+        """预览当前选中的模板图片。"""
+        item = self.list_templates.selectedItems()[0] if self.list_templates.selectedItems() else self.list_templates.currentItem()
+        if not item:
+            QtWidgets.QMessageBox.information(self, "提示", "请先在列表中选择一张图片")
+            return
+        path = self._resolve_template_path(item.text())
+        pm = QtGui.QPixmap(path)
+        if pm.isNull():
+            QtWidgets.QMessageBox.warning(self, "无法预览", f"图片无法打开：\n{path}")
+            return
+        ImagePreviewDialog(pm, path, self).exec()
+
+    def _on_screenshot_add_template(self):
+        """截图并保存为模板到 assets/images，然后加入列表并提示成功。"""
+        screens = QtGui.QGuiApplication.screens()
+        if not screens:
+            QtWidgets.QMessageBox.warning(self, "截图失败", "未检测到屏幕")
+            return
+        # 从“显示器索引”(1-based)选择屏幕
+        idx = max(1, min(self.sb_monitor.value(), len(screens))) - 1
+        screen = screens[idx]
+        bg = screen.grabWindow(0)
+        snip = RegionSnipDialog(screen, bg, self)
+        if snip.exec() == QtWidgets.QDialog.Accepted and snip.selected_pixmap and not snip.selected_pixmap.isNull():
+            images_abs, images_rel = self._ensure_assets_images_dir()
+            fname = f"template_{QtCore.QDateTime.currentDateTime().toString('yyyyMMdd_HHmmss_zzz')}.png"
+            abs_path = os.path.join(images_abs, fname)
+            snip.selected_pixmap.save(abs_path, "PNG")
+            rel_path = os.path.join(images_rel, fname)
+            self.list_templates.addItem(rel_path)
+            QtWidgets.QMessageBox.information(self, "成功", f"模板图片已创建：\n{rel_path}")
 
     def _get_template_paths(self) -> List[str]:
         """读取列表中的所有模板路径。"""
