@@ -141,22 +141,14 @@ class RegionSnipDialog(QtWidgets.QDialog):
     """
     def __init__(self, screen: QtGui.QScreen, background: QtGui.QPixmap, parent=None):
         super().__init__(parent)
-        # 使用无边框置顶窗口，但不启用窗口级半透明。
-        # 说明：跨屏（不同DPI）移动时，WA_TranslucentBackground 在 Windows 上偶发出现
-        # 叠加缓冲未刷新导致的灰色残影/透明异常。由于我们自己绘制了全屏截图和半透明遮罩，
-        # 并不需要窗口级透明，因此显式关闭以规避问题。
+        # 使用无边框置顶窗口，启用窗口级透明背景，以系统真实桌面为背景。
+        # 这样可避免预抓屏幕图在混合DPI下的错位，选区所见即所得。
         self.setWindowFlags(QtCore.Qt.FramelessWindowHint | QtCore.Qt.Dialog | QtCore.Qt.WindowStaysOnTopHint)
         self.setWindowModality(QtCore.Qt.ApplicationModal)
-        self.setAttribute(QtCore.Qt.WA_TranslucentBackground, False)
+        self.setAttribute(QtCore.Qt.WA_TranslucentBackground, True)
         # 对话框关闭后立即销毁，避免定时器等异步回调导致重新显示
         self.setAttribute(QtCore.Qt.WA_DeleteOnClose, True)
         self._screen = screen  # 当前覆盖的屏幕
-        self._bg = background  # 当前屏幕截图
-        # 显式同步截图的DPR，避免跨屏切换时出现缩放错位
-        try:
-            self._bg.setDevicePixelRatio(self._screen.devicePixelRatio())
-        except Exception:
-            pass
         self._origin = None
         self._current = None
         self.selected_pixmap: QtGui.QPixmap | None = None
@@ -252,15 +244,6 @@ class RegionSnipDialog(QtWidgets.QDialog):
         if screen is None or screen is self._screen:
             return
         self._screen = screen
-        try:
-            self._bg = self._screen.grabWindow(0)
-            try:
-                self._bg.setDevicePixelRatio(self._screen.devicePixelRatio())
-            except Exception:
-                pass
-        except Exception:
-            # 若截屏失败则保持原图，避免崩溃
-            pass
         # 切换屏幕后重置选择，避免坐标空间混淆
         self._origin = None
         self._current = None
@@ -291,15 +274,18 @@ class RegionSnipDialog(QtWidgets.QDialog):
             self._switch_to_screen(scr)
 
     def paintEvent(self, event: QtGui.QPaintEvent) -> None:
+        """绘制半透明遮罩，选区内部完全透明以直透桌面。"""
         p = QtGui.QPainter(self)
-        # 绘制屏幕截图作为背景
-        p.drawPixmap(0, 0, self.width(), self.height(), self._bg)
-        # 半透明遮罩
-        p.fillRect(self.rect(), QtGui.QColor(0, 0, 0, 100))
-        # 选择区域高亮与尺寸提示
+        p.setRenderHint(QtGui.QPainter.Antialiasing)
+        # 覆盖整屏半透明蒙版
+        p.fillRect(self.rect(), QtGui.QColor(0, 0, 0, 96))
         if self._origin and self._current:
             rect = QtCore.QRect(self._origin, self._current).normalized()
-            p.drawPixmap(rect, self._bg, rect)
+            # 清除选区为透明
+            p.setCompositionMode(QtGui.QPainter.CompositionMode_Clear)
+            p.fillRect(rect, QtCore.Qt.transparent)
+            # 恢复正常模式后绘制边框与尺寸提示
+            p.setCompositionMode(QtGui.QPainter.CompositionMode_SourceOver)
             p.setPen(QtGui.QPen(QtGui.QColor(0, 120, 215), 2))
             p.setBrush(QtCore.Qt.NoBrush)
             p.drawRect(rect)
@@ -324,10 +310,11 @@ class RegionSnipDialog(QtWidgets.QDialog):
         if e.button() == QtCore.Qt.LeftButton and self._origin and self._current:
             rect = QtCore.QRect(self._origin, self._current).normalized()
             if rect.width() > 2 and rect.height() > 2:
-                # 处理高DPI，按设备像素比换算源区域
-                dpr = self._bg.devicePixelRatio()
+                # 实时抓取当前屏幕并按DPR裁切，确保跨屏与混合DPI准确
+                shot = self._screen.grabWindow(0)
+                dpr = shot.devicePixelRatio() or self._screen.devicePixelRatio()
                 src = QtCore.QRect(int(rect.x() * dpr), int(rect.y() * dpr), int(rect.width() * dpr), int(rect.height() * dpr))
-                self.selected_pixmap = self._bg.copy(src)
+                self.selected_pixmap = shot.copy(src)
             # 先结束拖拽，再accept，减少与定时器的竞态
             self._dragging = False
             self.accept()
