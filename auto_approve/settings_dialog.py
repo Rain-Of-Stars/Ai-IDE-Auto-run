@@ -133,20 +133,162 @@ class ScreenshotPreviewDialog(QtWidgets.QDialog):
         self._label.setPixmap(scaled)
 
 class RegionSnipDialog(QtWidgets.QDialog):
-    """全屏截图取框对话框：左键拖拽选择；右键或Esc取消。"""
+    """全屏截图取框对话框：左键拖拽选择；右键或Esc取消。
+
+    关键增强：
+    - 跟随鼠标所在屏幕：在未拖拽时，鼠标移到哪个屏幕，取框覆盖就切到哪个屏幕；
+    - 高DPI安全：按截图像素比进行区域拷贝，避免缩放误差。
+    """
     def __init__(self, screen: QtGui.QScreen, background: QtGui.QPixmap, parent=None):
         super().__init__(parent)
-        self.setWindowFlags(QtCore.Qt.FramelessWindowHint | QtCore.Qt.Dialog)
+        # 使用无边框置顶窗口，但不启用窗口级半透明。
+        # 说明：跨屏（不同DPI）移动时，WA_TranslucentBackground 在 Windows 上偶发出现
+        # 叠加缓冲未刷新导致的灰色残影/透明异常。由于我们自己绘制了全屏截图和半透明遮罩，
+        # 并不需要窗口级透明，因此显式关闭以规避问题。
+        self.setWindowFlags(QtCore.Qt.FramelessWindowHint | QtCore.Qt.Dialog | QtCore.Qt.WindowStaysOnTopHint)
         self.setWindowModality(QtCore.Qt.ApplicationModal)
-        self.setAttribute(QtCore.Qt.WA_TranslucentBackground, True)
-        self._screen = screen
-        self._bg = background
+        self.setAttribute(QtCore.Qt.WA_TranslucentBackground, False)
+        # 对话框关闭后立即销毁，避免定时器等异步回调导致重新显示
+        self.setAttribute(QtCore.Qt.WA_DeleteOnClose, True)
+        self._screen = screen  # 当前覆盖的屏幕
+        self._bg = background  # 当前屏幕截图
+        # 显式同步截图的DPR，避免跨屏切换时出现缩放错位
+        try:
+            self._bg.setDevicePixelRatio(self._screen.devicePixelRatio())
+        except Exception:
+            pass
         self._origin = None
         self._current = None
         self.selected_pixmap: QtGui.QPixmap | None = None
+        # 关闭标志：accept/reject后置为True，所有异步流程应尽快退出
+        self._closing: bool = False
+        # 绑定到当前屏幕并匹配几何
+        self._apply_screen(screen)
         self.setGeometry(screen.geometry())
         self._hint_font = self.font()
         self._hint_font.setPointSize(self._hint_font.pointSize() + 1)
+
+        # 拖拽标志：按下左键开始，释放后结束
+        self._dragging: bool = False
+
+        # 鼠标屏幕跟随定时器：未拖拽时根据鼠标位置切换覆盖屏幕
+        self._cursor_timer = QtCore.QTimer(self)
+        self._cursor_timer.setInterval(80)  # 80ms足够流畅
+        self._cursor_timer.timeout.connect(self._follow_cursor_screen)
+        self._cursor_timer.start()
+
+    # ---------- 生命周期与关闭控制 ----------
+    def _shutdown_timer(self):
+        """安全停止内部定时器（多次调用无副作用）。"""
+        try:
+            if hasattr(self, "_cursor_timer") and self._cursor_timer is not None:
+                self._cursor_timer.stop()
+                try:
+                    self._cursor_timer.timeout.disconnect(self._follow_cursor_screen)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    def accept(self) -> None:
+        """确认选择：停止定时器并隐藏窗口，避免覆盖层残留。"""
+        self._dragging = False
+        self._closing = True
+        self._shutdown_timer()
+        # 先隐藏，防止定时器尾调用触发 _switch_to_screen 把窗口又显示出来
+        try:
+            # 降级去顶置，避免极端情况下的置顶残留
+            self.setWindowFlag(QtCore.Qt.WindowStaysOnTopHint, False)
+            self.setWindowOpacity(0.0)
+            self.show()  # 应用窗口标志变更
+            self.hide()
+        except Exception:
+            pass
+        # 立即刷新事件队列，尽快让系统移除窗口
+        try:
+            QtWidgets.QApplication.processEvents(QtCore.QEventLoop.ExcludeUserInputEvents)
+        except Exception:
+            pass
+        super().accept()
+
+    def reject(self) -> None:
+        """取消：同样停止定时器并隐藏窗口。"""
+        self._dragging = False
+        self._closing = True
+        self._shutdown_timer()
+        try:
+            self.setWindowFlag(QtCore.Qt.WindowStaysOnTopHint, False)
+            self.setWindowOpacity(0.0)
+            self.show()
+            self.hide()
+        except Exception:
+            pass
+        try:
+            QtWidgets.QApplication.processEvents(QtCore.QEventLoop.ExcludeUserInputEvents)
+        except Exception:
+            pass
+        super().reject()
+
+    def closeEvent(self, e: QtGui.QCloseEvent) -> None:
+        """关闭事件：兜底停止定时器。"""
+        self._closing = True
+        self._shutdown_timer()
+        super().closeEvent(e)
+
+    def _apply_screen(self, screen: QtGui.QScreen):
+        """将窗口绑定到指定屏幕（用于跨屏与DPI调整）。"""
+        try:
+            handle = self.windowHandle()
+            if handle is not None and screen is not None:
+                handle.setScreen(screen)
+        except Exception:
+            pass
+
+    def _switch_to_screen(self, screen: QtGui.QScreen):
+        """切换覆盖到指定屏幕：更新窗口几何与背景截图，并重置选择状态。"""
+        # 若窗口已不可见（例如刚刚 accept/reject 关闭），避免被再次显示
+        if self._closing or not self.isVisible():
+            return
+        if screen is None or screen is self._screen:
+            return
+        self._screen = screen
+        try:
+            self._bg = self._screen.grabWindow(0)
+            try:
+                self._bg.setDevicePixelRatio(self._screen.devicePixelRatio())
+            except Exception:
+                pass
+        except Exception:
+            # 若截屏失败则保持原图，避免崩溃
+            pass
+        # 切换屏幕后重置选择，避免坐标空间混淆
+        self._origin = None
+        self._current = None
+        self._apply_screen(self._screen)
+        self.setGeometry(self._screen.geometry())
+        # 仅在可见状态下刷新前置，避免在关闭过程中被重新显示
+        if not self._closing and self.isVisible():
+            try:
+                self.raise_(); self.activateWindow(); self.show()
+            except Exception:
+                pass
+        self.update()
+
+    def _follow_cursor_screen(self):
+        """定时检查鼠标所在屏幕并切换覆盖，拖拽中不切屏。"""
+        # 窗口不可见或正在拖拽时不做任何切换
+        if self._closing or not self.isVisible() or self._dragging:
+            return
+        pos = QtGui.QCursor.pos()
+        scr = QtGui.QGuiApplication.screenAt(pos)
+        # 兼容回退：若screenAt返回None，手动根据geometry判断
+        if scr is None:
+            for s in QtGui.QGuiApplication.screens():
+                if s.geometry().contains(pos):
+                    scr = s
+                    break
+        if scr is not None and scr is not self._screen:
+            self._switch_to_screen(scr)
 
     def paintEvent(self, event: QtGui.QPaintEvent) -> None:
         p = QtGui.QPainter(self)
@@ -168,6 +310,7 @@ class RegionSnipDialog(QtWidgets.QDialog):
 
     def mousePressEvent(self, e: QtGui.QMouseEvent) -> None:
         if e.button() == QtCore.Qt.LeftButton:
+            self._dragging = True
             self._origin = e.pos()
             self._current = e.pos()
             self.update()
@@ -185,13 +328,18 @@ class RegionSnipDialog(QtWidgets.QDialog):
                 dpr = self._bg.devicePixelRatio()
                 src = QtCore.QRect(int(rect.x() * dpr), int(rect.y() * dpr), int(rect.width() * dpr), int(rect.height() * dpr))
                 self.selected_pixmap = self._bg.copy(src)
+            # 先结束拖拽，再accept，减少与定时器的竞态
+            self._dragging = False
             self.accept()
         elif e.button() == QtCore.Qt.RightButton:
             self.reject()
+        # 任意释放都结束拖拽
+        self._dragging = False
 
     def keyPressEvent(self, e: QtGui.QKeyEvent) -> None:
         if e.key() == QtCore.Qt.Key_Escape:
             self.reject()
+            self._dragging = False
 
 def _parse_pair(text: str, typ=float) -> Tuple:
     """解析形如 "a,b" 的文本为二元组，允许空格。"""
