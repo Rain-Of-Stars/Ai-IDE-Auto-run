@@ -24,7 +24,8 @@
 <img width="862" height="592" alt="image" src="https://github.com/user-attachments/assets/b6195368-5a22-459c-919a-21fb3f7d082a" />
 
 8.通知提示
-![Uploading image.png…]()
+
+<img width="394" height="124" alt="image" src="https://github.com/user-attachments/assets/ba4205e1-b887-4b09-a61f-c1f0a39565cc" />
 
 
 
