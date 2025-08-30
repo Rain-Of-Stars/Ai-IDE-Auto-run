@@ -51,15 +51,15 @@
 
 ## 📦 安装要求
 
-### 系统要求
-- Windows 10/11
-- Python 3.8+
+### 开发环境
+- Windows 11
+- Python 3.13.5
 
 ### 依赖包
 ```
-PySide6>=6.5
-opencv-python-headless>=4.9.0.80
-numpy>=1.24.0,<2.0
+PySide6>=6.7.2,<7
+opencv-python-headless>=4.10.0.84,<5
+numpy>=2.1,<3
 mss>=9.0.1
 ```
 
