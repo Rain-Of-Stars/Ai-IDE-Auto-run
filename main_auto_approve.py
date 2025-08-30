@@ -28,6 +28,7 @@ warnings.filterwarnings("ignore", category=UserWarning, module=r"numpy(\.|$)")
 
 from PySide6 import QtWidgets, QtGui, QtCore
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
+from typing import TYPE_CHECKING  # 仅用于类型检查的惰性导入
 
 from auto_approve.config_manager import load_config, save_config, AppConfig
 from auto_approve.logger_manager import enable_file_logging, get_logger
@@ -35,6 +36,10 @@ from auto_approve.logger_manager import enable_file_logging, get_logger
 # from scanner_worker import ScannerWorker
 from auto_approve.settings_dialog import SettingsDialog
 from auto_approve.screen_list_dialog import ScreenListDialog
+
+# 仅在类型检查时导入，避免运行期提前加载 numpy/cv2 等重依赖
+if TYPE_CHECKING:
+    from auto_approve.scanner_worker import ScannerWorker
 
 
 # ---------- 外观主题 ----------
