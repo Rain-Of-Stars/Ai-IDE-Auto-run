@@ -1,14 +1,13 @@
 {
-  "template_path": "D:/Person_project/自动同意小工具3/approve_pix.png",
+  "template_path": "assets/images/approve_pix.png",
   "template_paths": [
-    "D:/Person_project/自动同意小工具3/approve_pix.png",
-    "D:/Person_project/自动同意小工具添加多组图/approve_pix.png",
-    "D:/Person_project/自动同意小工具添加多组图/continue.png",
-    "D:/Person_project/自动同意小工具添加多组图/Runeverytime.png",
-    "D:/Person_project/自动同意小工具添加多组图/Runthistime.png",
-    "D:/Person_project/自动同意小工具添加多组图/Runalt.png",
-    "D:/Person_project/自动同意小工具添加多组图/approve2.png",
-    "D:/Person_project/自动同意小工具添加多组图/approve3.png"
+    "assets/images/approve_pix.png",
+    "assets/images/continue.png",
+    "assets/images/Runeverytime.png",
+    "assets/images/Runthistime.png",
+    "assets/images/Runalt.png",
+    "assets/images/approve2.png",
+    "assets/images/approve3.png"
   ],
   "monitor_index": 2,
   "roi": {
