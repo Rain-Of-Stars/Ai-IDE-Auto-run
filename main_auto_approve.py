@@ -83,11 +83,16 @@ def apply_modern_theme(app: QtWidgets.QApplication):
 
 class TrayApp(QtWidgets.QSystemTrayIcon):
     def __init__(self, app: QtWidgets.QApplication):
-        # 创建自定义绿色图标
-        icon = self._create_custom_icon()
+        # 使用自定义图标文件
+        icon_path = os.path.join("assets", "icons", "icons", "custom_icon.ico")
+        if os.path.exists(icon_path):
+            icon = QtGui.QIcon(icon_path)
+        else:
+            # 如果图标文件不存在，使用备用的自定义绘制图标
+            icon = self._create_custom_icon()
         super().__init__(icon)
         self.app = app
-        self.setToolTip("自动同意 - 未启动")
+        self.setToolTip("AI-IDE-Auto-Run - 未启动")
 
         self.cfg: AppConfig = load_config()
         enable_file_logging(self.cfg.enable_logging)
@@ -144,7 +149,7 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
 
         # 初始通知
         self.show()
-        self.showMessage("自动同意", "已在后台托盘运行", QtWidgets.QSystemTrayIcon.Information, 3000)
+        self.showMessage("AI-IDE-Auto-Run", "已在后台托盘运行", QtWidgets.QSystemTrayIcon.Information, 3000)
 
         # 自动启动扫描
         if self.cfg.auto_start_scan:
@@ -198,7 +203,7 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
         self.act_start.setEnabled(False)
         self.act_stop.setEnabled(True)
         self.act_status.setText("状态: 运行中")
-        self.setToolTip("自动同意 - 运行中")
+        self.setToolTip("AI-IDE-Auto-Run - 运行中")
         self.logger.info("扫描已启动")
 
     def stop_scanning(self):
@@ -211,7 +216,7 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
         self.act_start.setEnabled(True)
         self.act_stop.setEnabled(False)
         self.act_status.setText("状态: 未启动")
-        self.setToolTip("自动同意 - 未启动")
+        self.setToolTip("AI-IDE-Auto-Run - 未启动")
         self.logger.info("扫描已停止")
 
     # ---------- 托盘菜单逻辑 ----------
@@ -318,7 +323,7 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
 
     def on_status(self, text: str):
         self.act_status.setText(f"状态: {text}")
-        self.setToolTip(f"自动同意 - {text}")
+        self.setToolTip(f"AI-IDE-Auto-Run - {text}")
 
     def on_hit(self, score: float, sx: int, sy: int):
         self.showMessage("已自动点击", f"score={score:.3f} @ ({sx},{sy})",
@@ -341,6 +346,16 @@ def main():
 
     app = QtWidgets.QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
+    
+    # 设置应用程序名称和显示名称（用于通知消息标题）
+    app.setApplicationName("AI-IDE-Auto-Run")
+    app.setApplicationDisplayName("AI-IDE-Auto-Run")
+    
+    # 设置应用程序图标（用于通知消息）
+    icon_path = os.path.join("assets", "icons", "icons", "custom_icon.ico")
+    if os.path.exists(icon_path):
+        app.setWindowIcon(QtGui.QIcon(icon_path))
+    
     apply_modern_theme(app)
 
     # ========== 进程级单实例：QLocalServer/QLocalSocket ==========

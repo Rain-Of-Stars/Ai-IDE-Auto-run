@@ -345,7 +345,7 @@ class SettingsDialog(QtWidgets.QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         # 窗口参数
-        self.setWindowTitle("自动同意 - 设置")
+        self.setWindowTitle("AI-IDE-Auto-Run - 设置")
         self.setModal(True)
         self.resize(860, 560)
         self.setMinimumSize(760, 520)
