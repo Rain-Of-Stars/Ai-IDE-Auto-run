@@ -16,11 +16,15 @@
 
 6.用户可截图要无感点击的区域，作为检测目标自行添加
 
-<img width="862" height="592" alt="image" src="https://github.com/user-attachments/assets/b038590e-d816-4964-9766-3d27a3f01475" />
+<img width="862" height="592" alt="image" src="https://github.com/user-attachments/assets/a1bce9b0-e5b0-4697-9ff7-169362afffd5" />
+
 
 7.多屏幕支持
 
 <img width="862" height="592" alt="image" src="https://github.com/user-attachments/assets/b6195368-5a22-459c-919a-21fb3f7d082a" />
+
+8.通知提示
+<img width="383" height="120" alt="image" src="https://github.com/user-attachments/assets/a7f32db0-1dd5-4737-9fad-a9aaf652715a" />
 
 
 
