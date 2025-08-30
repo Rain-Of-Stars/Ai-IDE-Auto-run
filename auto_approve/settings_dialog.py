@@ -281,15 +281,11 @@ class RegionSnipDialog(QtWidgets.QDialog):
         p.fillRect(self.rect(), QtGui.QColor(0, 0, 0, 96))
         if self._origin and self._current:
             rect = QtCore.QRect(self._origin, self._current).normalized()
-            # 清除选区为透明
+            # 清除选区为透明，仅保留“挖洞”效果；不绘制任何边框
             p.setCompositionMode(QtGui.QPainter.CompositionMode_Clear)
             p.fillRect(rect, QtCore.Qt.transparent)
-            # 恢复正常模式后仅绘制边框（不再显示尺寸文字）
+            # 恢复正常模式但不再绘制边框或文字
             p.setCompositionMode(QtGui.QPainter.CompositionMode_SourceOver)
-            p.setPen(QtGui.QPen(QtGui.QColor(0, 120, 215), 2))
-            p.setBrush(QtCore.Qt.NoBrush)
-            p.drawRect(rect)
-            # 不显示大小文字，避免视觉遮挡
         p.end()
 
     def mousePressEvent(self, e: QtGui.QMouseEvent) -> None:
