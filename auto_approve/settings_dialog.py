@@ -83,6 +83,55 @@ class ImagePreviewDialog(QtWidgets.QDialog):
         scaled = self._pixmap.scaled(self._label.size(), QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
         self._label.setPixmap(scaled)
 
+class ScreenshotPreviewDialog(QtWidgets.QDialog):
+    """截图确认预览对话框：显示图片，并提供保存/取消按钮。
+
+    设计要点：
+    - 仅负责展示与返回用户意图，不直接负责文件保存；
+    - 保存按钮对象名设为primary，匹配现有QSS主按钮样式；
+    - 预览区自适应窗口尺寸，平滑缩放。
+    """
+    def __init__(self, pixmap: QtGui.QPixmap, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("截图预览")
+        self.resize(820, 580)
+        self._pixmap = pixmap
+
+        # 预览标签
+        self._label = QtWidgets.QLabel()
+        self._label.setAlignment(QtCore.Qt.AlignCenter)
+
+        # 底部按钮：保存/取消（保存置于首位并标记为主按钮）
+        self.btn_save = QtWidgets.QPushButton("保存")
+        self.btn_save.setObjectName("primary")  # 使用样式表中的主按钮配色
+        self.btn_cancel = QtWidgets.QPushButton("取消")
+        self.btn_save.clicked.connect(self.accept)
+        self.btn_cancel.clicked.connect(self.reject)
+
+        # 布局
+        v = QtWidgets.QVBoxLayout(self)
+        v.setContentsMargins(8, 8, 8, 8)
+        v.addWidget(self._label, 1)
+        h = QtWidgets.QHBoxLayout()
+        h.addStretch(1)
+        h.addWidget(self.btn_save)
+        h.addWidget(self.btn_cancel)
+        v.addLayout(h)
+
+        self._update_view()
+
+    def resizeEvent(self, e: QtGui.QResizeEvent) -> None:
+        super().resizeEvent(e)
+        self._update_view()
+
+    def _update_view(self):
+        """更新预览图显示，按保持比例缩放到标签尺寸。"""
+        if self._pixmap.isNull():
+            self._label.setText("无法加载图片")
+            return
+        scaled = self._pixmap.scaled(self._label.size(), QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
+        self._label.setPixmap(scaled)
+
 class RegionSnipDialog(QtWidgets.QDialog):
     """全屏截图取框对话框：左键拖拽选择；右键或Esc取消。"""
     def __init__(self, screen: QtGui.QScreen, background: QtGui.QPixmap, parent=None):
@@ -495,24 +544,46 @@ class SettingsDialog(QtWidgets.QDialog):
         ImagePreviewDialog(pm, path, self).exec()
 
     def _on_screenshot_add_template(self):
-        """截图并保存为模板到 assets/images，然后加入列表并提示成功。"""
+        """截图并在预览窗口中让用户决定是否保存为模板。
+
+        改动说明：
+        - 屏幕选择策略：优先使用鼠标所在屏幕，其次回退到“显示器索引”。
+        - 截图完成后弹出“截图预览”对话框，提供“保存/取消”。
+        - 用户点击保存时，统一保存为PNG到项目的 assets/images，并加入模板列表。
+        """
         screens = QtGui.QGuiApplication.screens()
         if not screens:
             QtWidgets.QMessageBox.warning(self, "截图失败", "未检测到屏幕")
             return
-        # 从“显示器索引”(1-based)选择屏幕
-        idx = max(1, min(self.sb_monitor.value(), len(screens))) - 1
-        screen = screens[idx]
+
+        # 1) 优先根据鼠标位置选择屏幕；若不可用，回退到索引选择
+        cursor_pos = QtGui.QCursor.pos()
+        screen = QtGui.QGuiApplication.screenAt(cursor_pos)
+        if screen is None:
+            # 从“显示器索引”(1-based)选择屏幕（与旧行为兼容）
+            idx = max(1, min(self.sb_monitor.value(), len(screens))) - 1
+            screen = screens[idx]
+
+        # 2) 截取目标屏幕全屏背景，启动区域取框
         bg = screen.grabWindow(0)
         snip = RegionSnipDialog(screen, bg, self)
-        if snip.exec() == QtWidgets.QDialog.Accepted and snip.selected_pixmap and not snip.selected_pixmap.isNull():
-            images_abs, images_rel = self._ensure_assets_images_dir()
-            fname = f"template_{QtCore.QDateTime.currentDateTime().toString('yyyyMMdd_HHmmss_zzz')}.png"
-            abs_path = os.path.join(images_abs, fname)
-            snip.selected_pixmap.save(abs_path, "PNG")
-            rel_path = os.path.join(images_rel, fname)
-            self.list_templates.addItem(rel_path)
-            QtWidgets.QMessageBox.information(self, "成功", f"模板图片已创建：\n{rel_path}")
+        if snip.exec() != QtWidgets.QDialog.Accepted or not snip.selected_pixmap or snip.selected_pixmap.isNull():
+            return
+
+        # 3) 弹出确认预览，用户决定是否保存
+        confirm = ScreenshotPreviewDialog(snip.selected_pixmap, self)
+        if confirm.exec() != QtWidgets.QDialog.Accepted:
+            # 用户取消，不保存
+            return
+
+        # 4) 保存PNG到 assets/images 下，并加入列表
+        images_abs, images_rel = self._ensure_assets_images_dir()
+        fname = f"template_{QtCore.QDateTime.currentDateTime().toString('yyyyMMdd_HHmmss_zzz')}.png"
+        abs_path = os.path.join(images_abs, fname)
+        snip.selected_pixmap.save(abs_path, "PNG")
+        rel_path = os.path.join(images_rel, fname)
+        self.list_templates.addItem(rel_path)
+        QtWidgets.QMessageBox.information(self, "成功", f"模板图片已创建：\n{rel_path}")
 
     def _get_template_paths(self) -> List[str]:
         """读取列表中的所有模板路径。"""
