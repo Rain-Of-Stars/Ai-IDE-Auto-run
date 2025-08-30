@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 import sys
 import signal
+import warnings
 
 # 在导入Qt库之前关闭 qt.qpa.window 分类日志，以屏蔽
 # “SetProcessDpiAwarenessContext() failed: 拒绝访问。” 的无害告警。
@@ -19,13 +20,21 @@ import signal
 #（可能影响高DPI显示清晰度，默认不启用）。
 os.environ.setdefault("QT_LOGGING_RULES", "qt.qpa.window=false")
 
+# 抑制 numpy 在导入时的实验性与数值精度相关告警，避免干扰控制台输出
+# 注意：仅影响告警显示，不改变任何数值行为；需要彻底解决请改用发布构建的numpy
+warnings.filterwarnings("ignore", message=r".*MINGW-W64.*", category=UserWarning)
+warnings.filterwarnings("ignore", category=RuntimeWarning, module=r"numpy(\.|$)")
+warnings.filterwarnings("ignore", category=UserWarning, module=r"numpy(\.|$)")
+
 from PySide6 import QtWidgets, QtGui, QtCore
+from PySide6.QtNetwork import QLocalServer, QLocalSocket
 
 from config_manager import load_config, save_config, AppConfig
 from logger_manager import enable_file_logging, get_logger
-from scanner_worker import ScannerWorker
+# 延迟导入扫描线程，避免应用启动即导入 numpy/cv2 产生控制台告警
+# from scanner_worker import ScannerWorker
 from settings_dialog import SettingsDialog
-from screen_list_dialog import show_screen_list_dialog
+from screen_list_dialog import ScreenListDialog
 
 
 # ---------- 外观主题 ----------
@@ -78,8 +87,12 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
         enable_file_logging(self.cfg.enable_logging)
         self.logger = get_logger()
 
-        # 工作线程
-        self.worker: ScannerWorker | None = None
+        # 工作线程（延迟导入scanner_worker后创建）
+        self.worker: "ScannerWorker" | None = None
+        # 设置对话框单实例引用
+        self.settings_dlg: SettingsDialog | None = None
+        # 屏幕列表对话框单实例引用
+        self.screen_list_dlg: ScreenListDialog | None = None
 
         # 菜单
         self.menu = QtWidgets.QMenu()
@@ -168,6 +181,9 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
     def start_scanning(self):
         if self.worker is not None and self.worker.isRunning():
             return
+        # 延迟导入，只有真正开始扫描时才加载依赖（numpy/cv2）
+        from scanner_worker import ScannerWorker  # noqa: WPS433
+
         self.cfg = load_config()  # 读取最新配置
         self.worker = ScannerWorker(self.cfg)
         self._bind_worker_signals()
@@ -203,25 +219,87 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
                          QtWidgets.QSystemTrayIcon.Information, 2000)
 
     def open_settings(self):
-        dlg = SettingsDialog()
-        if dlg.exec() == QtWidgets.QDialog.Accepted:
-            # 用户保存了配置
-            self.cfg = load_config()
-            enable_file_logging(self.cfg.enable_logging)
-            # 运行中则应用新配置
-            if self.worker is not None and self.worker.isRunning():
-                self.worker.update_config(self.cfg)
-            self.showMessage("设置", "配置已保存", QtWidgets.QSystemTrayIcon.Information, 2000)
+        """打开设置窗口：若已存在则仅聚焦置前，不重复创建。
+        说明：不再依赖 isVisible() 判断，避免快速连续触发时（窗口尚未来得及显示）
+        出现竞态导致重复创建多个设置窗口。
+        """
+        # 若已有窗口（无论当前是否已显示），则只做聚焦与置前
+        if self.settings_dlg is not None:
+            self._focus_window(self.settings_dlg)
+            return
+
+        # 创建新窗口并保持引用，防止重复实例
+        self.settings_dlg = SettingsDialog()
+        # 关闭时自动销毁对象，避免悬挂引用
+        self.settings_dlg.setAttribute(QtCore.Qt.WA_DeleteOnClose, True)
+        # 连接信号：保存后更新配置；无论结果如何，结束时清理引用
+        self.settings_dlg.accepted.connect(self._on_settings_accepted)
+        self.settings_dlg.finished.connect(self._on_settings_finished)
+        # 显示并置前（使用非阻塞show，保证托盘可响应后续点击）
+        self.settings_dlg.show()
+        self._focus_window(self.settings_dlg)
+
+    def _on_settings_accepted(self):
+        """设置窗口点击保存后回调：重新加载并应用配置。"""
+        # 用户保存了配置
+        self.cfg = load_config()
+        enable_file_logging(self.cfg.enable_logging)
+        # 运行中则应用新配置
+        if self.worker is not None and self.worker.isRunning():
+            self.worker.update_config(self.cfg)
+        self.showMessage("设置", "配置已保存", QtWidgets.QSystemTrayIcon.Information, 2000)
+
+    def _on_settings_finished(self, _result: int):
+        """设置窗口关闭后回调：清理单实例引用。"""
+        self.settings_dlg = None
+
+    def _on_screen_list_finished(self, _result: int):
+        """屏幕列表对话框关闭后回调：记录选择并清理引用。"""
+        try:
+            if self.screen_list_dlg is not None:
+                try:
+                    sel = self.screen_list_dlg.get_selected_screen()
+                    self.logger.info(f"屏幕列表已关闭，最后选择的屏幕: {sel}")
+                except Exception:
+                    pass
+        finally:
+            self.screen_list_dlg = None
+
+    def _focus_window(self, w: QtWidgets.QWidget):
+        """将窗口置于前台并获取焦点（尽量兼容Windows前台限制）。"""
+        try:
+            # 先确保可见
+            if w.isMinimized():
+                w.showNormal()
+            else:
+                w.show()
+            # 再尝试提升与激活
+            w.raise_()
+            w.activateWindow()
+            # 部分系统上需要异步再激活一次以确保前置
+            QtCore.QTimer.singleShot(0, w.activateWindow)
+        except Exception:
+            # 兜底：即便失败也不影响功能
+            pass
     
     def show_screen_list(self):
-        """显示屏幕列表对话框"""
+        """显示屏幕列表对话框：单实例，已存在则聚焦置前。"""
+        # 若已有窗口（无论是否已显示），则仅聚焦
+        if self.screen_list_dlg is not None:
+            self._focus_window(self.screen_list_dlg)
+            return
+
         try:
-            selected_screen = show_screen_list_dialog()
-            self.logger.info(f"用户查看了屏幕列表，当前选择屏幕: {selected_screen}")
+            # 非模态显示；关闭即释放
+            self.screen_list_dlg = ScreenListDialog()
+            self.screen_list_dlg.setAttribute(QtCore.Qt.WA_DeleteOnClose, True)
+            self.screen_list_dlg.finished.connect(self._on_screen_list_finished)
+            self.screen_list_dlg.show()
+            self._focus_window(self.screen_list_dlg)
         except Exception as e:
             self.logger.error(f"显示屏幕列表时发生错误: {e}")
             QtWidgets.QMessageBox.warning(
-                None, "错误", 
+                None, "错误",
                 f"显示屏幕列表时发生错误：\n{str(e)}"
             )
 
@@ -259,7 +337,57 @@ def main():
     app.setQuitOnLastWindowClosed(False)
     apply_modern_theme(app)
 
+    # ========== 进程级单实例：QLocalServer/QLocalSocket ==========
+    # 若已存在实例：发送聚焦设置窗口请求并退出当前进程
+    instance_name = "auto_approve_tray_singleton"
+    sock = QLocalSocket()
+    sock.connectToServer(instance_name)
+    if sock.waitForConnected(150):
+        try:
+            sock.write(b"show_settings")
+            sock.flush()
+            sock.waitForBytesWritten(150)
+        finally:
+            sock.disconnectFromServer()
+        # 直接退出，不再创建第二个托盘实例
+        return
+
+    # 可能存在上次崩溃留下的同名服务器，先尝试清理
+    try:
+        QLocalServer.removeServer(instance_name)
+    except Exception:
+        pass
+
+    # 启动本实例的本地服务器，接收来自后续启动实例的“聚焦设置”请求
+    server = QLocalServer()
+    server.listen(instance_name)
+
     tray = TrayApp(app)
+
+    def _handle_incoming():
+        # 处理新连接，读取命令并触发前台聚焦
+        client = server.nextPendingConnection()
+        if client is None:
+            return
+        def _read_and_handle():
+            try:
+                data = bytes(client.readAll()).decode("utf-8", errors="ignore").strip()
+                cmd = data or "show_settings"
+                # 统一处理为打开/聚焦设置窗口
+                tray.open_settings()
+            finally:
+                try:
+                    client.disconnectFromServer()
+                except Exception:
+                    pass
+                client.close()
+        # 有的系统连接建立即带数据；保险起见立即与异步各触发一次
+        _read_and_handle()
+        QtCore.QTimer.singleShot(0, _read_and_handle)
+
+    server.newConnection.connect(_handle_incoming)
+    # 保持引用，避免被GC
+    tray._single_instance_server = server  # noqa: SLF001
 
     # 阻塞到事件循环结束
     sys.exit(app.exec())

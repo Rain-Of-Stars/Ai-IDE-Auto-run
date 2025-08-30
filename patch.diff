@@ -1,0 +1,75 @@
+*** Begin Patch
+*** Update File: main_auto_approve.py
+@@
+ class TrayApp(QtWidgets.QSystemTrayIcon):
+     def __init__(self, app: QtWidgets.QApplication):
+@@
+-        self.app = app
++        self.app = app
+         self.setToolTip("自动同意 - 未启动")
+@@
+-        # 工作线程
++        # 工作线程
+         self.worker: ScannerWorker | None = None
++        # 设置对话框单实例引用
++        self.settings_dlg: SettingsDialog | None = None
+@@
+-    def open_settings(self):
+-        dlg = SettingsDialog()
+-        if dlg.exec() == QtWidgets.QDialog.Accepted:
+-            # 用户保存了配置
+-            self.cfg = load_config()
+-            enable_file_logging(self.cfg.enable_logging)
+-            # 运行中则应用新配置
+-            if self.worker is not None and self.worker.isRunning():
+-                self.worker.update_config(self.cfg)
+-            self.showMessage("设置", "配置已保存", QtWidgets.QSystemTrayIcon.Information, 2000)
++    def open_settings(self):
++        """打开设置窗口：若已存在则仅聚焦置前，不重复创建。"""
++        # 若已有窗口，则聚焦并置前
++        if self.settings_dlg is not None and self.settings_dlg.isVisible():
++            self._focus_window(self.settings_dlg)
++            return
++
++        # 创建新窗口并保持引用，防止重复实例
++        self.settings_dlg = SettingsDialog()
++        # 关闭时自动销毁对象，避免悬挂引用
++        self.settings_dlg.setAttribute(QtCore.Qt.WA_DeleteOnClose, True)
++        # 连接信号：保存后更新配置；无论结果如何，结束时清理引用
++        self.settings_dlg.accepted.connect(self._on_settings_accepted)
++        self.settings_dlg.finished.connect(self._on_settings_finished)
++        # 显示并置前（使用非阻塞show，保证托盘可响应后续点击）
++        self.settings_dlg.show()
++        self._focus_window(self.settings_dlg)
++
++    def _on_settings_accepted(self):
++        """设置窗口点击保存后回调：重新加载并应用配置。"""
++        # 用户保存了配置
++        self.cfg = load_config()
++        enable_file_logging(self.cfg.enable_logging)
++        # 运行中则应用新配置
++        if self.worker is not None and self.worker.isRunning():
++            self.worker.update_config(self.cfg)
++        self.showMessage("设置", "配置已保存", QtWidgets.QSystemTrayIcon.Information, 2000)
++
++    def _on_settings_finished(self, _result: int):
++        """设置窗口关闭后回调：清理单实例引用。"""
++        self.settings_dlg = None
++
++    def _focus_window(self, w: QtWidgets.QWidget):
++        """将窗口置于前台并获取焦点（尽量兼容Windows前台限制）。"""
++        try:
++            # 先确保可见
++            if w.isMinimized():
++                w.showNormal()
++            else:
++                w.show()
++            # 再尝试提升与激活
++            w.raise_()
++            w.activateWindow()
++            # 部分系统上需要异步再激活一次以确保前置
++            QtCore.QTimer.singleShot(0, w.activateWindow)
++        except Exception:
++            # 兜底：即便失败也不影响功能
++            pass
+*** End Patch
