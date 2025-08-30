@@ -1,5 +1,5 @@
 # Ai-IDE-Auto-run
-用pyside6做的Windows小工具解决trae ide的“继续”、windsurf的“run”、codex的“run”等等，实现Ai ide自动化运行
+用pyside6做的Windows小工具解决trae ide的“继续”、windsurf的“run”、codex的“Approve”等等，实现Ai ide自动化运行
 
 
 1.当弹出该提示时能自动点击，注意：能无感点击，不影响鼠标、不影响键盘输入等任务
