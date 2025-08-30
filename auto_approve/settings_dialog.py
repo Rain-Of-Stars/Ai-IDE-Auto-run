@@ -711,7 +711,15 @@ class SettingsDialog(QtWidgets.QDialog):
         abs_path = os.path.join(images_abs, fname)
         snip.selected_pixmap.save(abs_path, "PNG")
         rel_path = os.path.join(images_rel, fname)
-        self.list_templates.addItem(rel_path)
+        # 去重添加并选中新增项
+        existing = {self.list_templates.item(i).text().strip() for i in range(self.list_templates.count())}
+        if rel_path not in existing:
+            self.list_templates.addItem(rel_path)
+        # 将焦点移动到新增项，便于用户确认
+        for i in range(self.list_templates.count()-1, -1, -1):
+            if self.list_templates.item(i).text().strip() == rel_path:
+                self.list_templates.setCurrentRow(i)
+                break
         QtWidgets.QMessageBox.information(self, "成功", f"模板图片已创建：\n{rel_path}")
 
     def _get_template_paths(self) -> List[str]:
