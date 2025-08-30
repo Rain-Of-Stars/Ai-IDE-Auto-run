@@ -9,7 +9,7 @@ from typing import Tuple, List
 
 from PySide6 import QtWidgets, QtCore
 
-from config_manager import AppConfig, ROI, save_config, load_config
+from auto_approve.config_manager import AppConfig, ROI, save_config, load_config
 
 
 def _parse_pair(text: str, typ=float) -> Tuple:

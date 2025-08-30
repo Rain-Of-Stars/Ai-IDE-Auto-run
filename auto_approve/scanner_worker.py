@@ -15,9 +15,9 @@ import cv2
 import mss
 from PySide6 import QtCore
 
-from config_manager import AppConfig, ROI
-from logger_manager import get_logger
-from win_clicker import post_click_with_config
+from auto_approve.config_manager import AppConfig, ROI
+from auto_approve.logger_manager import get_logger
+from auto_approve.win_clicker import post_click_with_config
 
 
 class ScannerWorker(QtCore.QThread):
@@ -253,15 +253,26 @@ class ScannerWorker(QtCore.QThread):
         total_tpl_count = 0
         missing_files: List[str] = []
 
-        for path in paths:
-            if not os.path.exists(path):
-                missing_files.append(path)
-                continue
+        # 计算工程根目录，用于资源回退（assets/images）
+        pkg_dir = os.path.dirname(__file__)
+        proj_root = os.path.abspath(os.path.join(pkg_dir, os.pardir))
+        assets_img_dir = os.path.join(proj_root, 'assets', 'images')
 
-            img = cv2.imdecode(np.fromfile(path, dtype=np.uint8), cv2.IMREAD_UNCHANGED)
+        for path in paths:
+            load_path = path
+            if not os.path.exists(load_path):
+                # 兼容旧配置：仅给出文件名或旧根目录相对路径时，尝试在 assets/images 下查找
+                candidate = os.path.join(assets_img_dir, os.path.basename(path))
+                if os.path.exists(candidate):
+                    load_path = candidate
+                else:
+                    missing_files.append(path)
+                    continue
+
+            img = cv2.imdecode(np.fromfile(load_path, dtype=np.uint8), cv2.IMREAD_UNCHANGED)
             if img is None:
                 # imread 对中文路径可能失败，已用 imdecode；若仍失败则跳过
-                self.sig_log.emit(f"无法读取模板图像: {path}")
+                self.sig_log.emit(f"无法读取模板图像: {load_path}")
                 continue
 
             # 转灰度可降低计算量

@@ -6,6 +6,7 @@
 """
 
 import json
+import os
 import mss
 import cv2
 import numpy as np
@@ -50,16 +51,24 @@ def capture_screen(monitor_index, monitors):
 def find_template_in_image(img, template_path, threshold=0.7):
     """在图像中查找模板"""
     try:
-        # 尝试使用相对路径
+        # 尝试使用相对/兼容路径：优先原路径，其次尝试 assets/images 下的同名文件
         if not Path(template_path).exists():
-            # 尝试只使用文件名
             template_name = Path(template_path).name
+            # 尝试当前目录
             if Path(template_name).exists():
-                template_path = template_name
+                template_path = str(template_name)
                 print(f"使用相对路径: {template_path}")
             else:
-                print(f"❌ 模板文件不存在: {template_path}")
-                return None
+                # 尝试工程根目录的 assets/images
+                tool_dir = os.path.dirname(__file__)
+                proj_root = os.path.abspath(os.path.join(tool_dir, os.pardir))
+                candidate = Path(proj_root) / 'assets' / 'images' / template_name
+                if candidate.exists():
+                    template_path = str(candidate)
+                    print(f"使用资源路径: {template_path}")
+                else:
+                    print(f"❌ 模板文件不存在: {template_path}")
+                    return None
         
         # 使用cv2.imdecode来避免路径编码问题
         try:

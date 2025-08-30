@@ -24,7 +24,7 @@ class ROI:
 @dataclass
 class AppConfig:
     # 模板图片路径（单个，兼容旧版本）
-    template_path: str = "approve_pix.png"
+    template_path: str = "assets/images/approve_pix.png"
     # 多模板路径列表：如非空，则以此为准；为空则回退到 template_path
     template_paths: List[str] = field(default_factory=list)
     # 监视器索引，mss 的 monitors 为 1 开始计数

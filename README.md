@@ -59,9 +59,10 @@ mss>=9.0.1
    ```bash
    pip install -r requirements.txt
    ```
-3. 运行主程序：
-   ```bash
-   python main_auto_approve.py
+3. 运行主程序（推荐PowerShell）：
+   ```powershell
+   # 一键UTF-8并运行（使用指定conda环境）
+   ./scripts/run_app.ps1
    ```
 
 ## 🚀 快速开始
@@ -108,26 +109,51 @@ mss>=9.0.1
 
 ### 配置文件
 配置保存在 `config.json` 文件中，可以手动编辑或通过设置界面修改。
+为兼容旧版本：当配置中的模板路径文件不存在时，程序会自动在`assets/images/`下按同名文件回退查找。
 
 ## 🛠️ 项目结构
 
 ```
-自动同意小工具添加多组图/
-├── main_auto_approve.py          # 主程序入口，托盘应用
-├── config_manager.py             # 配置管理模块
-├── scanner_worker.py             # 屏幕扫描工作线程
-├── win_clicker.py                # Windows无感点击实现
-├── settings_dialog.py            # 设置对话框
-├── screen_list_dialog.py         # 屏幕列表显示
-├── logger_manager.py             # 日志管理
-├── diagnose_multiscreen_click.py # 多屏幕诊断工具
-├── fix_multiscreen_config.py     # 多屏幕配置修复
-├── debug_coordinates.py          # 坐标调试工具
-├── config.json                   # 配置文件
-├── requirements.txt              # 依赖包列表
-├── modern_flat.qss              # 界面样式文件
-├── icons/                        # 图标资源
-└── *.png                        # 模板图片文件
+自动同意小工具添加多组图github/
+├── main_auto_approve.py        # 主程序入口（保持主文件命名规范）
+├── auto_approve/               # 核心代码包
+│   ├── __init__.py
+│   ├── config_manager.py       # 配置管理
+│   ├── logger_manager.py       # 日志管理
+│   ├── scanner_worker.py       # 屏幕扫描线程
+│   ├── settings_dialog.py      # 设置对话框
+│   ├── screen_list_dialog.py   # 屏幕列表
+│   └── win_clicker.py          # Windows无感点击
+├── assets/
+│   ├── images/                 # 模板图片等
+│   │   ├── approve_pix.png
+│   │   ├── approve2.png, approve3.png, continue.png, Run*.png, ...
+│   ├── styles/
+│   │   └── modern_flat.qss     # 样式文件
+│   └── icons/
+│       └── checkmark_16.svg    # 图标资源
+├── tools/                      # 诊断与开发辅助脚本
+│   ├── debug_coordinates.py
+│   ├── diagnose_multiscreen_click.py
+│   └── fix_multiscreen_config.py
+├── scripts/
+│   └── run_app.ps1             # 一键UTF-8并运行（conda环境）
+├── config.json                 # 应用配置（JSON持久化）
+├── requirements.txt            # 依赖清单
+└── README.md
+```
+
+```mermaid
+graph TD
+    A[启动] --> B[加载配置 config.json]
+    B --> C[初始化托盘与UI]
+    C --> D[开始扫描]
+    D --> E{模板匹配>=阈值?}
+    E -- 否 --> D
+    E -- 是 --> F[计算点击坐标]
+    F --> G[无感点击]
+    G --> H[冷却/记录日志]
+    H --> D
 ```
 
 ### 核心模块说明
@@ -170,13 +196,13 @@ mss>=9.0.1
 ### 使用方法
 ```bash
 # 诊断多屏幕问题
-python diagnose_multiscreen_click.py
+python tools/diagnose_multiscreen_click.py
 
 # 修复多屏幕配置
-python fix_multiscreen_config.py
+python tools/fix_multiscreen_config.py
 
 # 调试坐标
-python debug_coordinates.py
+python tools/debug_coordinates.py
 ```
 
 ## 🐛 故障排除
@@ -198,6 +224,15 @@ python debug_coordinates.py
 #### 3. 点击无效果
 - 确认目标窗口支持PostMessage
 - 尝试不同的点击方法
+
+## PowerShell UTF-8 终端配置（避免中文乱码）
+```powershell
+$ErrorActionPreference='Stop';
+[Console]::InputEncoding = [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false;
+$env:PYTHONIOENCODING = 'utf-8';
+$PSDefaultParameterValues['Out-File:Encoding'] = 'utf8';
+"OK: UTF-8 configured"
+```
 - 检查窗口权限和状态
 - 启用窗口验证功能
 

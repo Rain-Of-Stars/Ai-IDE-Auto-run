@@ -29,12 +29,12 @@ warnings.filterwarnings("ignore", category=UserWarning, module=r"numpy(\.|$)")
 from PySide6 import QtWidgets, QtGui, QtCore
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 
-from config_manager import load_config, save_config, AppConfig
-from logger_manager import enable_file_logging, get_logger
+from auto_approve.config_manager import load_config, save_config, AppConfig
+from auto_approve.logger_manager import enable_file_logging, get_logger
 # 延迟导入扫描线程，避免应用启动即导入 numpy/cv2 产生控制台告警
 # from scanner_worker import ScannerWorker
-from settings_dialog import SettingsDialog
-from screen_list_dialog import ScreenListDialog
+from auto_approve.settings_dialog import SettingsDialog
+from auto_approve.screen_list_dialog import ScreenListDialog
 
 
 # ---------- 外观主题 ----------
@@ -46,7 +46,8 @@ def apply_modern_theme(app: QtWidgets.QApplication):
     # 统一字体（中文更友好）
     app.setFont(QtGui.QFont("Microsoft YaHei UI", 10))
 
-    qss_path = os.path.join(os.path.dirname(__file__), "modern_flat.qss")
+    # 优先从工程化后的 assets/styles 目录加载
+    qss_path = os.path.join(os.path.dirname(__file__), "assets", "styles", "modern_flat.qss")
     if os.path.exists(qss_path):
         try:
             with open(qss_path, "r", encoding="utf-8") as f:
@@ -182,7 +183,7 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
         if self.worker is not None and self.worker.isRunning():
             return
         # 延迟导入，只有真正开始扫描时才加载依赖（numpy/cv2）
-        from scanner_worker import ScannerWorker  # noqa: WPS433
+        from auto_approve.scanner_worker import ScannerWorker  # 延迟导入，降低启动开销
 
         self.cfg = load_config()  # 读取最新配置
         self.worker = ScannerWorker(self.cfg)

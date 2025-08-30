@@ -12,7 +12,7 @@ from ctypes import wintypes
 import logging
 from typing import Optional, Tuple
 
-from logger_manager import get_logger
+from auto_approve.logger_manager import get_logger
 
 user32 = ctypes.WinDLL('user32', use_last_error=True)
 
