@@ -1,0 +1,51 @@
+{
+  "template_path": "D:/Person_project/自动同意小工具3/approve_pix.png",
+  "template_paths": [
+    "D:/Person_project/自动同意小工具3/approve_pix.png",
+    "D:/Person_project/自动同意小工具添加多组图/approve_pix.png",
+    "D:/Person_project/自动同意小工具添加多组图/continue.png",
+    "D:/Person_project/自动同意小工具添加多组图/Runeverytime.png",
+    "D:/Person_project/自动同意小工具添加多组图/Runthistime.png",
+    "D:/Person_project/自动同意小工具添加多组图/Runalt.png",
+    "D:/Person_project/自动同意小工具添加多组图/approve2.png",
+    "D:/Person_project/自动同意小工具添加多组图/approve3.png"
+  ],
+  "monitor_index": 2,
+  "roi": {
+    "x": 0,
+    "y": 0,
+    "w": 0,
+    "h": 0
+  },
+  "interval_ms": 800,
+  "threshold": 0.9,
+  "cooldown_s": 5.0,
+  "enable_logging": false,
+  "grayscale": true,
+  "multi_scale": true,
+  "scales": [
+    1.0,
+    1.25,
+    0.8
+  ],
+  "click_offset": [
+    0.0,
+    0.0
+  ],
+  "min_detections": 1,
+  "auto_start_scan": true,
+  "debug_mode": true,
+  "save_debug_images": false,
+  "debug_image_dir": "debug_images",
+  "enable_coordinate_correction": true,
+  "coordinate_offset": [
+    0,
+    0
+  ],
+  "enhanced_window_finding": true,
+  "click_method": "message",
+  "verify_window_before_click": true,
+  "coordinate_transform_mode": "auto",
+  "enable_multi_screen_polling": true,
+  "screen_polling_interval_ms": 1000
+}

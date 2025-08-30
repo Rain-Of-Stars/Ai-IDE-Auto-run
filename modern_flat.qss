@@ -1,0 +1,99 @@
+/* 全局扁平化主题：强调视觉层次、对比与可用性（中文友好） */
+
+/* 基础色（不可变量） */
+/* 背景深色 #232428；面板 #2B2D31；输入 #32343A；文本主 #E6E6E6；文本次 #A8ABB2；
+   主色 #2F80ED；主色悬停 #3D8CFF；边框 #3C3F44 */
+
+QWidget {
+  background: #232428;
+  color: #E6E6E6;
+  font-family: "Microsoft YaHei UI";
+  font-size: 11pt;
+}
+
+/* 标题小字 */
+QLabel[subtitle="true"] {
+  color: #A8ABB2;
+  font-size: 10pt;
+  padding: 4px 0 8px 0;
+}
+
+QGroupBox {
+  background: #2B2D31;
+  border: 1px solid #3C3F44;
+  border-radius: 8px;
+  margin-top: 16px;
+  padding: 10px 10px 8px 10px;
+}
+QGroupBox::title {
+  subcontrol-origin: margin;
+  subcontrol-position: top left;
+  padding: 0 6px;
+  margin-left: 6px;
+  color: #A8ABB2;
+}
+
+/* 按钮 */
+QPushButton {
+  background: #2B2D31;
+  border: 1px solid #3C3F44;
+  padding: 6px 12px;
+  border-radius: 6px;
+}
+QPushButton:hover { border-color: #2F80ED; }
+QPushButton:pressed { background: #32343A; }
+
+/* 主按钮（保存）可通过对象名定制，若未设置则使用通用激活色 */
+QPushButton#primary,
+QDialogButtonBox QPushButton:first-child {
+  background: #2F80ED;
+  border-color: #2F80ED;
+  color: white;
+}
+QPushButton#primary:hover,
+QDialogButtonBox QPushButton:first-child:hover { background: #3D8CFF; }
+
+/* 输入控件 */
+QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox {
+  background: #32343A;
+  border: 1px solid #3C3F44;
+  border-radius: 6px;
+  padding: 4px 6px;
+}
+QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus {
+  border-color: #2F80ED;
+}
+QCheckBox {
+  spacing: 8px;
+}
+QCheckBox::indicator {
+  /* 指示器统一尺寸与圆角 */
+  width: 16px; height: 16px;
+  border-radius: 3px;
+}
+/* 未选中：深色底 + 细边 */
+QCheckBox::indicator:unchecked { border: 1px solid #3C3F44; background: #32343A; }
+/* 选中：蓝底 + 白色对勾图标 */
+QCheckBox::indicator:checked {
+  border: 1px solid #2F80ED;
+  background: #2F80ED;
+  image: url(icons/checkmark_16.svg);
+}
+/* 悬停反馈 */
+QCheckBox::indicator:unchecked:hover { border-color: #2F80ED; }
+QCheckBox::indicator:checked:hover { border-color: #3D8CFF; background: #3D8CFF; }
+/* 禁用态 */
+QCheckBox::indicator:disabled { border-color: #2D2F33; background: #2B2D31; image: none; }
+
+/* 列表与树 */
+QTreeWidget, QListWidget {
+  background: #2B2D31;
+  border: 1px solid #3C3F44;
+  border-radius: 8px;
+}
+QTreeWidget::item { padding: 6px 8px; }
+QTreeWidget::item:selected { background: #2F80ED; color: white; }
+
+/* 分隔条 */
+QSplitter::handle { background: #3C3F44; }
+QSplitter::handle:hover { background: #2F80ED; }
