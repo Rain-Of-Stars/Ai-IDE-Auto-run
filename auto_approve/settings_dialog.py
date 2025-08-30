@@ -10,6 +10,7 @@ from typing import Tuple, List
 from PySide6 import QtWidgets, QtCore, QtGui
 
 from auto_approve.config_manager import AppConfig, ROI, save_config, load_config
+from auto_approve.path_utils import get_app_base_dir
 
 
 class CustomCheckBox(QtWidgets.QCheckBox):
@@ -652,8 +653,12 @@ class SettingsDialog(QtWidgets.QDialog):
         self.list_templates.clear()
 
     def _ensure_assets_images_dir(self) -> Tuple[str, str]:
-        """确保 assets/images 目录存在，返回(绝对路径, 相对路径)。"""
-        proj_root = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
+        """确保 assets/images 目录存在，返回(绝对路径, 相对路径)。
+        
+        变更：基于应用基准目录（exe或主脚本目录）创建与保存，
+        避免打包运行时落到临时解包目录。
+        """
+        proj_root = get_app_base_dir()
         images_abs = os.path.join(proj_root, "assets", "images")
         images_rel = os.path.join("assets", "images")
         os.makedirs(images_abs, exist_ok=True)

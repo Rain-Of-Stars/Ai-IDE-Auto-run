@@ -1,22 +1,16 @@
 {
-  "template_path": "assets/images/approve_pix.png",
+  "template_path": "D:/Person_project/AI_IDE_Auto_Run_github/assets/images/approve_pix.png",
   "template_paths": [
-    "assets/images/approve_pix.png",
-    "assets/images/continue.png",
-    "assets/images/Runeverytime.png",
-    "assets/images/Runthistime.png",
-    "assets/images/Runalt.png",
-    "assets/images/approve2.png",
-    "assets/images/approve3.png",
-    "D:/Person_project/Ai-IDE-Auto-run-github/assets/images/approve_pix.png",
-    "D:/Person_project/Ai-IDE-Auto-run-github/assets/images/approve2.png",
-    "D:/Person_project/Ai-IDE-Auto-run-github/assets/images/approve3.png",
-    "D:/Person_project/Ai-IDE-Auto-run-github/assets/images/continue.png",
-    "D:/Person_project/Ai-IDE-Auto-run-github/assets/images/custom_icon_test.png",
-    "D:/Person_project/Ai-IDE-Auto-run-github/assets/images/imagerunthistime1.png",
-    "D:/Person_project/Ai-IDE-Auto-run-github/assets/images/Runalt.png",
-    "D:/Person_project/Ai-IDE-Auto-run-github/assets/images/Runeverytime.png",
-    "D:/Person_project/Ai-IDE-Auto-run-github/assets/images/Runthistime.png"
+    "D:/Person_project/AI_IDE_Auto_Run_github/assets/images/approve_pix.png",
+    "D:/Person_project/AI_IDE_Auto_Run_github/assets/images/approve2.png",
+    "D:/Person_project/AI_IDE_Auto_Run_github/assets/images/approve3.png",
+    "D:/Person_project/AI_IDE_Auto_Run_github/assets/images/continue.png",
+    "D:/Person_project/AI_IDE_Auto_Run_github/assets/images/custom_icon_test.png",
+    "D:/Person_project/AI_IDE_Auto_Run_github/assets/images/imagerunthistime1.png",
+    "D:/Person_project/AI_IDE_Auto_Run_github/assets/images/Runalt.png",
+    "D:/Person_project/AI_IDE_Auto_Run_github/assets/images/Runeverytime.png",
+    "D:/Person_project/AI_IDE_Auto_Run_github/assets/images/Runthistime.png",
+    "assets\\images\\template_20250831_052918_072.png"
   ],
   "monitor_index": 2,
   "roi": {

@@ -16,6 +16,7 @@ import mss
 from PySide6 import QtCore
 
 from auto_approve.config_manager import AppConfig, ROI
+from auto_approve.path_utils import get_app_base_dir
 from auto_approve.logger_manager import get_logger
 from auto_approve.win_clicker import post_click_with_config
 
@@ -51,9 +52,14 @@ class ScannerWorker(QtCore.QThread):
         self._last_polling_switch = 0.0
         self._all_monitors_cache = None
         
-        # 确保调试目录存在
+        # 解析调试目录（相对路径基于应用目录：exe或主脚本目录）并确保存在
+        base_dir = get_app_base_dir()
+        if os.path.isabs(self.cfg.debug_image_dir):
+            self._debug_dir = self.cfg.debug_image_dir
+        else:
+            self._debug_dir = os.path.join(base_dir, self.cfg.debug_image_dir)
         if self.cfg.save_debug_images:
-            os.makedirs(self.cfg.debug_image_dir, exist_ok=True)
+            os.makedirs(self._debug_dir, exist_ok=True)
 
     # ---------- 公共控制接口 ----------
 
@@ -202,7 +208,7 @@ class ScannerWorker(QtCore.QThread):
         if extra_info:
             filename = f"{prefix}_{extra_info}_{timestamp}_{self._debug_counter:04d}.png"
         
-        filepath = os.path.join(self.cfg.debug_image_dir, filename)
+        filepath = os.path.join(self._debug_dir, filename)
         try:
             cv2.imwrite(filepath, img)
             if self.cfg.debug_mode:
@@ -254,8 +260,7 @@ class ScannerWorker(QtCore.QThread):
         missing_files: List[str] = []
 
         # 计算工程根目录，用于资源回退（assets/images）
-        pkg_dir = os.path.dirname(__file__)
-        proj_root = os.path.abspath(os.path.join(pkg_dir, os.pardir))
+        proj_root = get_app_base_dir()
         assets_img_dir = os.path.join(proj_root, 'assets', 'images')
 
         for path in paths:
