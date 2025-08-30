@@ -356,6 +356,19 @@ class SettingsDialog(QtWidgets.QDialog):
         # ============ 初始化控件（不立刻布局，后续分组放入页面）============
         # 模板列表（支持多图）
         self.list_templates = QtWidgets.QListWidget()
+        # 为模板列表设置更明显的选中高亮（蓝底白字）
+        self.list_templates.setObjectName("tplList")
+        self.list_templates.setStyleSheet(
+            """
+            /* 仅作用于当前列表，保证高亮明显 */
+            #tplList { selection-background-color: #2F80ED; selection-color: white; }
+            #tplList::item:selected { background-color: #2F80ED; color: white; }
+            #tplList::item:selected:active { background-color: #2F80ED; color: white; }
+            #tplList::item:selected:!active { background-color: #2F80ED; color: white; }
+            #tplList::item:hover { background-color: rgba(47,128,237,0.18); }
+            """
+        )
+        self.list_templates.setAlternatingRowColors(True)
         self.list_templates.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
         # 纵向滚动：禁用横向滚动并启用文本换行
         self.list_templates.setWordWrap(True)
@@ -523,6 +536,16 @@ class SettingsDialog(QtWidgets.QDialog):
 
         # ============ 左侧多级菜单（QTreeWidget）============
         self.nav = QtWidgets.QTreeWidget()
+        # 提升左侧导航的选中可见度（与列表保持一致的蓝色系）
+        self.nav.setObjectName("navTree")
+        self.nav.setStyleSheet(
+            """
+            #navTree::item:selected { background-color: #2F80ED; color: white; }
+            #navTree::item:selected:active { background-color: #2F80ED; color: white; }
+            #navTree::item:selected:!active { background-color: #2F80ED; color: white; }
+            #navTree::item:hover { background-color: rgba(47,128,237,0.18); }
+            """
+        )
         self.nav.setHeaderHidden(True)
         self.nav.setMaximumWidth(240)
 
