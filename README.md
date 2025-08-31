@@ -15,7 +15,7 @@
 
 5.可以保存配置，通过json文件保存配置
 
-6.用户可截图要无感点击的区域，作为检测目标自行添加
+6.用户可截图要无感点击的区域，作为检测目标自行添加（建议使用前先针对不同屏幕进行截图，提高匹配度降低误触，检测失败可先排查这里）
 
 <img width="862" height="592" alt="image" src="https://github.com/user-attachments/assets/b4f1a22f-a436-4f7b-85b8-a011bc814ed2" />
 
