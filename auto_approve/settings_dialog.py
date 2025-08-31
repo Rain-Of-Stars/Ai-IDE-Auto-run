@@ -958,21 +958,17 @@ class SettingsDialog(QtWidgets.QDialog):
                 background-color: #2F80ED; 
                 color: white; 
                 font-weight: 500;
-                border-left: 3px solid #4A9EFF;
             }
             #navTree::item:selected:active { 
                 background-color: #2F80ED; 
                 color: white; 
-                border-left: 3px solid #4A9EFF;
             }
             #navTree::item:selected:!active { 
                 background-color: #2F80ED; 
                 color: white; 
-                border-left: 3px solid #4A9EFF;
             }
             #navTree::item:hover { 
                 background-color: rgba(47,128,237,0.15); 
-                border-left: 2px solid rgba(47,128,237,0.5);
             }
             #navTree::branch {
                 margin: 1px;
