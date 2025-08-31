@@ -1,13 +1,21 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""多屏幕点击问题诊断脚本
+"""多屏幕点击问题诊断脚本（生成叠图PNG）
 
-用于诊断为什么在屏幕1可以正确点击，但在屏幕2（主屏）无法正确点击的问题。
+输出：前台窗口 → 所属显示器 → 实际扫描矩形 的叠加图，便于直观核对。
 """
 
 import sys
+import os
 import json
+import time
 import mss
+import cv2
+import numpy as np
+from datetime import datetime
+# 确保可导入包
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir)))
+from auto_approve.win_clicker import get_foreground_window_info
 from pathlib import Path
 
 def load_current_config():
@@ -204,25 +212,73 @@ def analyze_coordinate_differences():
 
 def main():
     """主函数"""
-    print("开始多屏幕点击问题诊断...")
+    print("开始多屏幕点击问题诊断并生成叠图...")
     print(f"Python版本: {sys.version}")
     
     try:
-        # 1. 分析屏幕设置
+        # 基础信息
         monitors = analyze_screen_setup()
-        
-        # 2. 分析坐标差异
-        analyze_coordinate_differences()
-        
-        # 3. 测试坐标计算
-        test_coordinate_calculation(monitors)
-        
-        # 4. 诊断配置问题
-        issues = diagnose_config_issues()
-        
-        # 5. 提供修复建议
-        suggest_fixes(issues, monitors)
-        
+        cfg = load_current_config()
+
+        # 前台窗口信息
+        info = get_foreground_window_info()
+        if not info.get('valid'):
+            print("未检测到有效前台窗口，退出")
+            return
+        win = info['client_rect']
+        print(f"前台窗口: hwnd={info['hwnd']}, 进程={info.get('process','')}, 客户区={win}")
+
+        # 选择所属显示器（窗口中心点所在）
+        cx = win['left'] + win['width'] // 2
+        cy = win['top'] + win['height'] // 2
+        mons = monitors[1:]
+        mon_idx = 1
+        for i, m in enumerate(mons, 1):
+            if cx >= m['left'] and cx < m['left'] + m['width'] and cy >= m['top'] and cy < m['top'] + m['height']:
+                mon_idx = i
+                break
+        m = monitors[mon_idx]
+        print(f"窗口归属显示器: {mon_idx} -> {m}")
+
+        # 计算扫描矩形：ROI 与 窗口客户区 交集
+        bind = bool(cfg.get('bind_roi_to_hwnd', True))
+        if bind:
+            roi_rect = win
+        else:
+            r = cfg.get('roi', {"x":0,"y":0,"w":0,"h":0})
+            if r.get('w',0)>0 and r.get('h',0)>0:
+                roi_rect = {
+                    'left': m['left'] + int(r['x']), 'top': m['top'] + int(r['y']),
+                    'right': m['left'] + int(r['x']) + int(r['w']),
+                    'bottom': m['top'] + int(r['y']) + int(r['h']),
+                    'width': int(r['w']), 'height': int(r['h'])
+                }
+            else:
+                roi_rect = win
+        L = max(roi_rect['left'], win['left']); T = max(roi_rect['top'], win['top'])
+        R = min(roi_rect['right'], win['right']); B = min(roi_rect['bottom'], win['bottom'])
+        scan = {'left':L,'top':T,'right':R,'bottom':B,'width':max(0,R-L),'height':max(0,B-T)}
+        print(f"实际扫描矩形: {scan}")
+
+        # 抓取该显示器截图
+        with mss.mss() as sct:
+            img = np.asarray(sct.grab({'left': m['left'], 'top': m['top'], 'width': m['width'], 'height': m['height']}))
+            if img.shape[2] == 4:
+                img = img[:, :, :3]
+        canvas = img.copy()
+        # 绘制窗口客户区(红)、ROI(黄)、扫描矩形(绿)
+        def draw_rect(im, rc, color, label:str):
+            p1=(rc['left']-m['left'], rc['top']-m['top']); p2=(rc['right']-m['left'], rc['bottom']-m['top'])
+            cv2.rectangle(im, p1, p2, color, 2)
+            cv2.putText(im, label, (p1[0]+4, p1[1]+18), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2, cv2.LINE_AA)
+        draw_rect(canvas, win, (0,0,255), 'window-client')
+        draw_rect(canvas, roi_rect, (0,255,255), 'roi')
+        if scan['width']>0 and scan['height']>0:
+            draw_rect(canvas, scan, (0,255,0), 'scan')
+
+        out_path = f"diagnose_overlay_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+        cv2.imwrite(out_path, canvas)
+        print(f"叠图已保存: {out_path}")
         print("\n诊断完成！")
         
     except Exception as e:

@@ -512,6 +512,41 @@ class SettingsDialog(QtWidgets.QDialog):
         v_roi.addWidget(gb_roi)
         v_roi.addStretch(1)
 
+        # — 调度 · 事件驱动/轮询
+        page_sched = QtWidgets.QWidget()
+        form_sched = QtWidgets.QFormLayout(page_sched)
+        form_sched.setLabelAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
+        form_sched.setContentsMargins(16, 16, 16, 16)
+        # 扫描模式
+        self.combo_scan_mode = QtWidgets.QComboBox()
+        self.combo_scan_mode.addItem("事件驱动(推荐)", userData="event")
+        self.combo_scan_mode.addItem("轮询", userData="polling")
+        # 根据配置选择
+        try:
+            cur_mode = (self.cfg.scan_mode or "event").lower()
+        except Exception:
+            cur_mode = "event"
+        idx_mode = max(0, [self.combo_scan_mode.itemData(i) for i in range(self.combo_scan_mode.count())].index(cur_mode) if cur_mode in [self.combo_scan_mode.itemData(i) for i in range(self.combo_scan_mode.count())] else 0)
+        self.combo_scan_mode.setCurrentIndex(idx_mode)
+        # 数值参数
+        self.sb_active_ms = QtWidgets.QSpinBox(); self.sb_active_ms.setRange(10, 10000); self.sb_active_ms.setSingleStep(10); self.sb_active_ms.setSuffix(" ms"); self.sb_active_ms.setValue(getattr(self.cfg, 'active_scan_interval_ms', 120))
+        self.sb_idle_ms = QtWidgets.QSpinBox(); self.sb_idle_ms.setRange(200, 30000); self.sb_idle_ms.setSingleStep(100); self.sb_idle_ms.setSuffix(" ms"); self.sb_idle_ms.setValue(getattr(self.cfg, 'idle_scan_interval_ms', 2000))
+        self.sb_miss_max = QtWidgets.QSpinBox(); self.sb_miss_max.setRange(500, 60000); self.sb_miss_max.setSingleStep(100); self.sb_miss_max.setSuffix(" ms"); self.sb_miss_max.setValue(getattr(self.cfg, 'miss_backoff_ms_max', 5000))
+        self.sb_hit_cooldown = QtWidgets.QSpinBox(); self.sb_hit_cooldown.setRange(0, 60000); self.sb_hit_cooldown.setSingleStep(100); self.sb_hit_cooldown.setSuffix(" ms"); self.sb_hit_cooldown.setValue(getattr(self.cfg, 'hit_cooldown_ms', 4000))
+        # 白名单与ROI绑定
+        self.le_whitelist = QtWidgets.QLineEdit(",".join(getattr(self.cfg, 'process_whitelist', ["Code.exe", "Windsurf.exe", "Trae.exe"])) )
+        self.le_whitelist.setPlaceholderText("例如：Code.exe,Windsurf.exe,Trae.exe")
+        self.cb_bind_roi_hwnd = CustomCheckBox("ROI绑定前台窗口客户区")
+        self.cb_bind_roi_hwnd.setChecked(getattr(self.cfg, 'bind_roi_to_hwnd', True))
+        # 表单布局
+        form_sched.addRow("扫描模式", self.combo_scan_mode)
+        form_sched.addRow("积极扫描间隔", self.sb_active_ms)
+        form_sched.addRow("空闲扫描间隔", self.sb_idle_ms)
+        form_sched.addRow("未命中退避上限", self.sb_miss_max)
+        form_sched.addRow("命中后冷却", self.sb_hit_cooldown)
+        form_sched.addRow("进程白名单", self.le_whitelist)
+        form_sched.addRow(self.cb_bind_roi_hwnd)
+
         # — 多屏幕 · 轮询
         page_multi = QtWidgets.QWidget()
         form_multi = QtWidgets.QFormLayout(page_multi)
@@ -531,7 +566,7 @@ class SettingsDialog(QtWidgets.QDialog):
         form_debug.addRow(self.cb_enhanced_finding)
 
         # 加入堆叠
-        pages = [page_general_tpl, page_general_misc, page_match, page_click, page_roi, page_multi, page_debug]
+        pages = [page_general_tpl, page_general_misc, page_match, page_click, page_roi, page_sched, page_multi, page_debug]
         for p in pages:
             self.stack.addWidget(p)
 
@@ -576,19 +611,25 @@ class SettingsDialog(QtWidgets.QDialog):
         it_roi_page.setData(0, QtCore.Qt.ItemDataRole.UserRole, 4)
         it_roi.addChild(it_roi_page)
 
+        # 顶级：调度
+        it_sched = QtWidgets.QTreeWidgetItem(["调度"])
+        it_sched_page = QtWidgets.QTreeWidgetItem(["事件与节能"])
+        it_sched_page.setData(0, QtCore.Qt.ItemDataRole.UserRole, 5)
+        it_sched.addChild(it_sched_page)
+
         # 顶级：多屏幕
         it_multi = QtWidgets.QTreeWidgetItem(["多屏幕"])
         it_multi_page = QtWidgets.QTreeWidgetItem(["轮询"])
-        it_multi_page.setData(0, QtCore.Qt.ItemDataRole.UserRole, 5)
+        it_multi_page.setData(0, QtCore.Qt.ItemDataRole.UserRole, 6)
         it_multi.addChild(it_multi_page)
 
         # 顶级：调试
         it_debug = QtWidgets.QTreeWidgetItem(["调试"])
         it_debug_page = QtWidgets.QTreeWidgetItem(["调试与输出"])
-        it_debug_page.setData(0, QtCore.Qt.ItemDataRole.UserRole, 6)
+        it_debug_page.setData(0, QtCore.Qt.ItemDataRole.UserRole, 7)
         it_debug.addChild(it_debug_page)
 
-        self.nav.addTopLevelItems([it_general, it_match, it_click, it_roi, it_multi, it_debug])
+        self.nav.addTopLevelItems([it_general, it_match, it_click, it_roi, it_sched, it_multi, it_debug])
         self.nav.expandAll()
 
         # ============ 总体布局（左右分栏 + 底部按钮）============
@@ -780,6 +821,10 @@ class SettingsDialog(QtWidgets.QDialog):
             # 用户未配置则回退默认图片
             tpl_paths = []
 
+        # 解析进程白名单
+        wl_raw = self.le_whitelist.text() if hasattr(self, 'le_whitelist') else ""
+        wl = [s.strip() for s in wl_raw.replace(";", ",").split(",") if s.strip()]
+
         cfg = AppConfig(
             # 兼容：保留单模板字段，同时提供多模板列表
             template_path=(tpl_paths[0] if tpl_paths else "approve_pix.png"),
@@ -813,6 +858,14 @@ class SettingsDialog(QtWidgets.QDialog):
             coordinate_transform_mode=self.combo_transform_mode.currentText(),
             enable_multi_screen_polling=self.cb_multi_screen_polling.isChecked(),
             screen_polling_interval_ms=self.sb_polling_interval.value(),
+            # 调度/事件驱动
+            scan_mode=self.combo_scan_mode.currentData() if hasattr(self, 'combo_scan_mode') else 'event',
+            active_scan_interval_ms=self.sb_active_ms.value() if hasattr(self, 'sb_active_ms') else 120,
+            idle_scan_interval_ms=self.sb_idle_ms.value() if hasattr(self, 'sb_idle_ms') else 2000,
+            miss_backoff_ms_max=self.sb_miss_max.value() if hasattr(self, 'sb_miss_max') else 5000,
+            hit_cooldown_ms=self.sb_hit_cooldown.value() if hasattr(self, 'sb_hit_cooldown') else 4000,
+            process_whitelist=wl or ["Code.exe", "Windsurf.exe", "Trae.exe"],
+            bind_roi_to_hwnd=self.cb_bind_roi_hwnd.isChecked() if hasattr(self, 'cb_bind_roi_hwnd') else True,
         )
         save_config(cfg)
         self.accept()
@@ -828,4 +881,6 @@ class SettingsDialog(QtWidgets.QDialog):
             self.nav.setCurrentItem(child)
             return
         if isinstance(page_index, int):
-            self.stack.setCurrentIndex(page_index)
+        self.stack.setCurrentIndex(page_index)
+
+    # ---------- 新增：调度/事件驱动 UI 构建辅助（插入在现有 init UI 逻辑中） ----------

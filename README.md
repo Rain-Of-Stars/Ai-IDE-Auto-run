@@ -42,6 +42,7 @@
 - **调试模式**：提供详细的调试信息和坐标验证
 - **配置持久化**：所有设置保存为JSON文件，重启后自动恢复
 - **日志记录**：可选的文件日志功能，记录运行状态
+- **超低功耗(事件驱动)**：基于前台窗口事件驱动扫描，自适应退避，显著降低CPU占用
 
 ## 📦 安装要求
 
@@ -113,6 +114,29 @@ mss>=9.0.1
 ### 配置文件
 配置保存在 `config.json` 文件中，可以手动编辑或通过设置界面修改。
 为兼容旧版本：当配置中的模板路径文件不存在时，程序会自动在`assets/images/`下按同名文件回退查找。
+
+### 超低功耗模式(事件驱动)
+- 入口：设置 → 调度 → 扫描模式 选择“事件驱动(推荐)”
+- 推荐参数：
+  - `active_scan_interval_ms=120`
+  - `idle_scan_interval_ms=2000`
+  - `miss_backoff_ms_max=5000`
+  - `hit_cooldown_ms=4000`
+  - `process_whitelist=["Code.exe","Windsurf.exe","Trae.exe"]`
+  - `bind_roi_to_hwnd=true`（只在前台窗口客户区内扫描）
+- 工作原理：
+  - 监听前台窗口切换(EVENT_SYSTEM_FOREGROUND)，若进程在白名单则进入积极扫描；
+  - 未命中时指数退避至`miss_backoff_ms_max`；命中后进入`hit_cooldown_ms`冷却；
+  - 非白名单窗口使用`idle_scan_interval_ms`低频扫描。
+
+### 性能对比（示例）
+- 机器：Win11 + 2K双屏；模板6张
+
+| 模式 | 描述 | 平均CPU | 截图/匹配频率 |
+| --- | --- | --- | --- |
+| 旧版轮询 | 固定`interval_ms=800`整屏ROI | ~2.5% | 固定 |
+| 事件驱动 | 自适应: 命中冷却+退避 | ~0.4% | 动态 |
+
 
 ## 🛠️ 项目结构
 
@@ -200,6 +224,8 @@ graph TD
 - **diagnose_multiscreen_click.py**：诊断多屏幕点击问题
 - **fix_multiscreen_config.py**：自动修复多屏幕配置
 - **debug_coordinates.py**：调试坐标计算问题
+  - 新增：diagnose_multiscreen_click 会生成“前台窗口→所属显示器→实际扫描矩形”的叠图PNG，便于快速核对
+  - 新增：fix_multiscreen_config 支持一键将ROI绑定到前台窗口客户区
 
 ### 使用方法
 ```bash
@@ -215,6 +241,13 @@ python tools/debug_coordinates.py
 # 快速检查当前配置中的模板路径是否存在
 python scripts/check_config_paths.py
 ```
+
+## 📦 打包与发布（可选）
+- 建议使用 PySide6 Deploy 或 Nuitka 生成发布版
+- Nuitka 示例（需自行安装nuitka/uvloop等依赖）：
+  - Windows PowerShell：
+    - `python -m nuitka --onefile --enable-plugin=pyside6 --include-data-dir=assets=assets --output-dir=dist main_auto_approve.py`
+  - 更细节的打包脚本可参考`scripts/`目录（可根据实际环境调整）
 
 ## 🐛 故障排除
 

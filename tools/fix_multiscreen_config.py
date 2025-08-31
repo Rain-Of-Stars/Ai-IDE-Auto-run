@@ -6,8 +6,15 @@
 """
 
 import json
+import os
 import mss
 from pathlib import Path
+import sys as _sys
+_sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir)))
+from auto_approve.win_clicker import get_foreground_window_info
+import ctypes
+from ctypes import wintypes
+user32 = ctypes.WinDLL('user32', use_last_error=True)
 from datetime import datetime
 
 def backup_config():
@@ -157,6 +164,43 @@ def explain_problem():
     print("- 重置所有坐标偏移")
     print("- 启用调试和增强功能")
 
+def bind_roi_to_foreground_client():
+    """一键将ROI绑定到前台窗口客户区，并开启bind_roi_to_hwnd。"""
+    info = get_foreground_window_info()
+    if not info.get('valid'):
+        print("未检测到有效前台窗口，无法绑定ROI。")
+        return
+    win = info['client_rect']
+    # 计算相对窗口所属监视器的ROI
+    # 使用窗口客户区左上所在显示器左上为基准
+    pt = wintypes.POINT(win['left'], win['top'])
+    hmon = user32.MonitorFromPoint(pt, 2)
+    class MONITORINFO(ctypes.Structure):
+        _fields_ = [("cbSize", wintypes.DWORD), ("rcMonitor", wintypes.RECT), ("rcWork", wintypes.RECT), ("dwFlags", wintypes.DWORD)]
+    user32.GetMonitorInfoW.restype = wintypes.BOOL
+    user32.GetMonitorInfoW.argtypes = [wintypes.HANDLE, ctypes.POINTER(MONITORINFO)]
+    mi = MONITORINFO(); mi.cbSize = ctypes.sizeof(MONITORINFO)
+    mon_left = 0; mon_top = 0
+    if hmon and user32.GetMonitorInfoW(hmon, ctypes.byref(mi)):
+        mon_left = mi.rcMonitor.left; mon_top = mi.rcMonitor.top
+    roi = {
+        'x': max(0, win['left'] - mon_left),
+        'y': max(0, win['top'] - mon_top),
+        'w': max(1, win['width']),
+        'h': max(1, win['height'])
+    }
+    # 写入配置
+    config_file = Path("config.json")
+    conf = {}
+    if config_file.exists():
+        with open(config_file, 'r', encoding='utf-8') as f:
+            conf = json.load(f)
+    conf['bind_roi_to_hwnd'] = True
+    conf['roi'] = roi
+    with open(config_file, 'w', encoding='utf-8') as f:
+        json.dump(conf, f, indent=2, ensure_ascii=False)
+    print(f"已绑定ROI到前台窗口客户区: roi={roi}，bind_roi_to_hwnd=True")
+
 def main():
     """主函数"""
     print("开始修复多屏幕配置...")
@@ -185,7 +229,11 @@ def main():
         
         # 5. 解释问题原因
         explain_problem()
-        
+        print("\n是否将ROI绑定到当前前台窗口客户区并开启事件驱动?(y/n): ", end="")
+        resp = input().strip().lower()
+        if resp in ['y','yes','是','Y']:
+            bind_roi_to_foreground_client()
+    
     except Exception as e:
         print(f"修复过程中发生错误: {e}")
         import traceback

@@ -18,7 +18,73 @@ from PySide6 import QtCore
 from auto_approve.config_manager import AppConfig, ROI
 from auto_approve.path_utils import get_app_base_dir
 from auto_approve.logger_manager import get_logger
-from auto_approve.win_clicker import post_click_with_config
+from auto_approve.win_clicker import post_click_with_config, get_foreground_window_info, start_foreground_watcher, stop_foreground_watcher
+from auto_approve.scheduler import AdaptiveScanScheduler, SchedulerConfig
+
+import ctypes
+from ctypes import wintypes
+gdi32 = ctypes.WinDLL('gdi32', use_last_error=True)
+user32 = ctypes.WinDLL('user32', use_last_error=True)
+
+
+class TemplateBank:
+    """模板仓库：统一预处理为灰度边缘域，并构建固定尺度金字塔。
+    - 读入：cv2.IMREAD_GRAYSCALE
+    - 边缘：Canny（更鲁棒），可回退Sobel
+    - 尺度：固定 [0.9, 1.0, 1.1]
+    - 轮询：get_next_batch(k) 每轮仅返回最多k个模板，控制单次计算负载
+    """
+
+    def __init__(self):
+        self.templates: List[Tuple[np.ndarray, Tuple[int, int]]] = []
+        self.cursor: int = 0
+
+    def clear(self):
+        self.templates.clear()
+        self.cursor = 0
+
+    def load_from_paths(self, paths: List[str]) -> int:
+        self.clear()
+        total = 0
+        scales = [0.9, 1.0, 1.1]
+        for p in paths:
+            try:
+                data = cv2.imdecode(np.fromfile(p, dtype=np.uint8), cv2.IMREAD_GRAYSCALE)
+            except Exception:
+                data = None
+            if data is None:
+                continue
+            # 边缘域
+            try:
+                edge = cv2.Canny(data, 60, 180)
+            except Exception:
+                # 回退Sobel
+                gx = cv2.Sobel(data, cv2.CV_16S, 1, 0, ksize=3)
+                gy = cv2.Sobel(data, cv2.CV_16S, 0, 1, ksize=3)
+                edge = cv2.convertScaleAbs(cv2.addWeighted(cv2.convertScaleAbs(gx), 0.5,
+                                                           cv2.convertScaleAbs(gy), 0.5, 0))
+            h0, w0 = edge.shape[:2]
+            for s in scales:
+                w = max(2, int(round(w0 * s)))
+                h = max(2, int(round(h0 * s)))
+                tpl = edge if (w == w0 and h == h0) else cv2.resize(edge, (w, h), interpolation=cv2.INTER_AREA)
+                self.templates.append((tpl, (w, h)))
+                total += 1
+        self.cursor = 0
+        return total
+
+    def count(self) -> int:
+        return len(self.templates)
+
+    def get_next_batch(self, k: int = 2) -> List[Tuple[np.ndarray, Tuple[int, int]]]:
+        if not self.templates:
+            return []
+        k = max(1, min(k, len(self.templates)))
+        end = self.cursor + k
+        batch = self.templates[self.cursor:end]
+        # 轮转
+        self.cursor = 0 if end >= len(self.templates) else end
+        return batch
 
 
 class ScannerWorker(QtCore.QThread):
@@ -38,9 +104,9 @@ class ScannerWorker(QtCore.QThread):
         self._next_allowed = 0.0
         self._consecutive = 0
         self._logger = get_logger()
-        # 模板缓存：(tpl图像, (w,h))，包含所有模板、所有尺度
-        self._templates: List[Tuple[np.ndarray, Tuple[int, int]]] = []
-        # 已加载模板签名（用于避免重复加载），由多模板路径与关键配置组合而成
+        # 模板仓库
+        self._tpl_bank = TemplateBank()
+        # 已加载模板签名
         self._tpl_loaded_key: str = ""
         
         # 调试和多屏幕支持相关
@@ -61,6 +127,22 @@ class ScannerWorker(QtCore.QThread):
         if self.cfg.save_debug_images:
             os.makedirs(self._debug_dir, exist_ok=True)
 
+        # 自适应调度器与前台窗口信息
+        self._scheduler = AdaptiveScanScheduler(SchedulerConfig(
+            scan_mode=getattr(self.cfg, 'scan_mode', 'event'),
+            active_scan_interval_ms=getattr(self.cfg, 'active_scan_interval_ms', 120),
+            idle_scan_interval_ms=getattr(self.cfg, 'idle_scan_interval_ms', 2000),
+            miss_backoff_ms_max=getattr(self.cfg, 'miss_backoff_ms_max', 5000),
+            hit_cooldown_ms=getattr(self.cfg, 'hit_cooldown_ms', 4000),
+            process_whitelist=list(getattr(self.cfg, 'process_whitelist', ["Code.exe", "Windsurf.exe", "Trae.exe"]))
+        ))
+        self._fg_hwnd: int = 0
+        self._fg_proc: str = ""
+        self._hook_handle = None
+        # 缓存边缘图大小以便复用
+        self._last_edge_shape = (0, 0)
+        self._edge_img: np.ndarray | None = None
+
     # ---------- 公共控制接口 ----------
 
     def update_config(self, cfg: AppConfig):
@@ -68,6 +150,15 @@ class ScannerWorker(QtCore.QThread):
         self.cfg = cfg
         # 下次循环会使用新的参数，必要时重载模板
         self._load_templates(force=True)
+        # 同步自适应调度器配置
+        self._scheduler = AdaptiveScanScheduler(SchedulerConfig(
+            scan_mode=getattr(self.cfg, 'scan_mode', 'event'),
+            active_scan_interval_ms=getattr(self.cfg, 'active_scan_interval_ms', 120),
+            idle_scan_interval_ms=getattr(self.cfg, 'idle_scan_interval_ms', 2000),
+            miss_backoff_ms_max=getattr(self.cfg, 'miss_backoff_ms_max', 5000),
+            hit_cooldown_ms=getattr(self.cfg, 'hit_cooldown_ms', 4000),
+            process_whitelist=list(getattr(self.cfg, 'process_whitelist', ["Code.exe", "Windsurf.exe", "Trae.exe"]))
+        ))
 
     def stop(self):
         self._running = False
@@ -82,30 +173,43 @@ class ScannerWorker(QtCore.QThread):
 
         # 初始化 mss
         try:
+            # 事件：前台窗口变化 -> 更新调度器活跃态
+            def _on_fg(hwnd: int, pname: str):
+                self._fg_hwnd = int(hwnd)
+                self._fg_proc = pname or ""
+                self._scheduler.on_foreground_change(self._fg_proc)
+            try:
+                self._hook_handle = start_foreground_watcher(_on_fg)
+            except Exception:
+                self._hook_handle = None
+
             with mss.mss() as sct:
                 while self._running:
                     t0 = time.monotonic()
                     try:
-                        score = self._scan_once_and_maybe_click(sct)
-                        # 显示状态信息，包括多屏幕轮询信息
-                        if self.cfg.enable_multi_screen_polling:
-                            status_msg = f"运行中(多屏轮询) | 当前屏幕: {self._current_polling_monitor} | 匹配: {score:.3f}"
-                        else:
-                            status_msg = f"运行中 | 上次匹配: {score:.3f}"
+                        score, matched = self._scan_once_and_maybe_click(sct)
+                        delay_ms = self._scheduler.next_delay_ms()
+                        fg = self._fg_proc or "(无前台)"
+                        status_msg = f"运行中[{getattr(self.cfg, 'scan_mode', 'event')}] | 前台:{fg} | 匹配:{score:.3f} | 下一次:{delay_ms}ms"
                         self.sig_status.emit(status_msg)
                     except Exception as e:
                         self._logger.exception("扫描异常: %s", e)
                         self.sig_log.emit(f"扫描异常: {e}")
 
-                    # 控制间隔，避免高占用
+                    # 控制间隔：自适应
                     dt = (time.monotonic() - t0) * 1000.0
-                    sleep_ms = max(0, int(self.cfg.interval_ms - dt))
+                    sleep_ms = max(1, int(self._scheduler.next_delay_ms() - dt))
                     if sleep_ms > 0:
                         time.sleep(sleep_ms / 1000.0)
         except Exception as e:
             self._logger.exception("mss 初始化失败: %s", e)
             self.sig_log.emit(f"mss 初始化失败: {e}")
             self.sig_status.emit("已停止")
+        finally:
+            try:
+                stop_foreground_watcher()
+            except Exception:
+                pass
 
     # ---------- 私有工具函数 ----------
     
@@ -233,8 +337,8 @@ class ScannerWorker(QtCore.QThread):
         return True
 
     def _load_templates(self, force: bool = False):
-        """加载并缓存模板图像（支持多模板、可选多尺度）。"""
-        # 组装当前模板签名：多路径 + 灰度/多尺度/倍率
+        """加载模板到模板仓库（统一边缘域 + 固定尺度金字塔）。"""
+        # 组装当前模板签名：多路径 + 固定尺度
         paths: List[str] = []
         if getattr(self.cfg, "template_paths", None):
             paths = [os.path.abspath(p) for p in self.cfg.template_paths if str(p).strip()]
@@ -242,18 +346,13 @@ class ScannerWorker(QtCore.QThread):
             # 回退单路径
             paths = [os.path.abspath(self.cfg.template_path)]
 
-        key = "|".join([
-            ";".join(paths),
-            f"gray={int(bool(self.cfg.grayscale))}",
-            f"ms={int(bool(self.cfg.multi_scale))}",
-            f"scales={','.join([f'{s:g}' for s in (self.cfg.scales if self.cfg.multi_scale else (1.0,))])}"
-        ])
+        key = "|".join([";".join(paths), "edges=1", "scales=0.9,1.0,1.1"])
 
-        if not force and self._templates and self._tpl_loaded_key == key:
+        if not force and self._tpl_bank.count() > 0 and self._tpl_loaded_key == key:
             return
 
         # 重新加载
-        self._templates.clear()
+        self._tpl_bank.clear()
         self._tpl_loaded_key = key
 
         total_tpl_count = 0
@@ -263,6 +362,7 @@ class ScannerWorker(QtCore.QThread):
         proj_root = get_app_base_dir()
         assets_img_dir = os.path.join(proj_root, 'assets', 'images')
 
+        load_list: List[str] = []
         for path in paths:
             load_path = path
             if not os.path.exists(load_path):
@@ -273,42 +373,14 @@ class ScannerWorker(QtCore.QThread):
                 else:
                     missing_files.append(path)
                     continue
+            load_list.append(load_path)
 
-            img = cv2.imdecode(np.fromfile(load_path, dtype=np.uint8), cv2.IMREAD_UNCHANGED)
-            if img is None:
-                # imread 对中文路径可能失败，已用 imdecode；若仍失败则跳过
-                self.sig_log.emit(f"无法读取模板图像: {load_path}")
-                continue
-
-            # 转灰度可降低计算量
-            if self.cfg.grayscale:
-                if img.ndim == 3:
-                    img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-            else:
-                if img.ndim == 2:
-                    img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
-
-            scales = self.cfg.scales if self.cfg.multi_scale else (1.0,)
-            per_path_count = 0
-            for s in scales:
-                if s <= 0:
-                    continue
-                if s == 1.0:
-                    tpl = img.copy()
-                else:
-                    h, w = img.shape[:2]
-                    tpl = cv2.resize(img, (int(w * s), int(h * s)), interpolation=cv2.INTER_AREA)
-                th, tw = tpl.shape[:2]
-                if th < 2 or tw < 2:
-                    continue
-                self._templates.append((tpl, (tw, th)))
-                per_path_count += 1
-            total_tpl_count += per_path_count
+        total_tpl_count = self._tpl_bank.load_from_paths(load_list)
 
         # 日志反馈
         if missing_files:
             self.sig_log.emit("以下模板文件不存在: " + "; ".join(missing_files))
-        self.sig_log.emit(f"模板已加载，路径数={len(paths)}，总尺度数={total_tpl_count}")
+        self.sig_log.emit(f"模板已加载，路径数={len(load_list)}，总尺度数={total_tpl_count}")
 
     def _grab_roi(self, sct: mss.mss) -> Tuple[np.ndarray, int, int]:
         """抓取 ROI 图像，返回 (img, left, top)；left/top 为该 ROI 的屏幕坐标。
@@ -378,53 +450,176 @@ class ScannerWorker(QtCore.QThread):
                 self._logger.error(f"显示器信息: {monitor_info}")
             raise
 
-    def _match_best(self, img: np.ndarray) -> Tuple[float, Tuple[int, int], Tuple[int, int]]:
-        """在 img 中进行模板匹配，返回 (best_score, best_loc(x,y), best_tpl_size(w,h))。"""
+    # --------- 新增：前台窗口仅区域捕获与边缘域匹配 ---------
+
+    def _calc_scan_rect(self) -> Tuple[bool, dict]:
+        """计算扫描矩形（屏幕坐标），取配置ROI与前台窗口客户区的交集。"""
+        info = get_foreground_window_info()
+        if not info.get("valid"):
+            self._scheduler.on_foreground_change(None)
+            return False, {}
+        self._fg_hwnd = int(info["hwnd"])  # 缓存
+        self._fg_proc = info.get("process", "")
+        self._scheduler.on_foreground_change(self._fg_proc)
+
+        win_rect = info.get("client_rect") or {}
+        if not win_rect or win_rect.get("width", 0) <= 1 or win_rect.get("height", 0) <= 1:
+            return False, {}
+
+        if getattr(self.cfg, 'bind_roi_to_hwnd', True):
+            roi_rect = win_rect
+        else:
+            # ROI 相对配置显示器转换为屏幕坐标；为简化，使用窗口所在显示器左上为基准
+            mon_left, mon_top = 0, 0
+            try:
+                pt = wintypes.POINT(win_rect['left'], win_rect['top'])
+                hmon = user32.MonitorFromPoint(pt, 2)
+                class MONITORINFO(ctypes.Structure):
+                    _fields_ = [("cbSize", wintypes.DWORD), ("rcMonitor", wintypes.RECT), ("rcWork", wintypes.RECT), ("dwFlags", wintypes.DWORD)]
+                user32.GetMonitorInfoW.restype = wintypes.BOOL
+                user32.GetMonitorInfoW.argtypes = [wintypes.HANDLE, ctypes.POINTER(MONITORINFO)]
+                mi = MONITORINFO(); mi.cbSize = ctypes.sizeof(MONITORINFO)
+                if hmon and user32.GetMonitorInfoW(hmon, ctypes.byref(mi)):
+                    mon_left = mi.rcMonitor.left
+                    mon_top = mi.rcMonitor.top
+            except Exception:
+                pass
+            r: ROI = self.cfg.roi
+            if r.w > 0 and r.h > 0:
+                roi_rect = {"left": mon_left + int(r.x), "top": mon_top + int(r.y),
+                            "right": mon_left + int(r.x) + int(r.w),
+                            "bottom": mon_top + int(r.y) + int(r.h),
+                            "width": int(r.w), "height": int(r.h)}
+            else:
+                roi_rect = win_rect
+
+        L = max(roi_rect['left'], win_rect['left'])
+        T = max(roi_rect['top'], win_rect['top'])
+        R = min(roi_rect['right'], win_rect['right'])
+        B = min(roi_rect['bottom'], win_rect['bottom'])
+        if R - L <= 1 or B - T <= 1:
+            return False, {}
+        rect = {"left": L, "top": T, "right": R, "bottom": B, "width": R - L, "height": B - T}
+        return True, rect
+
+    def _capture_rect_blt(self, rect: dict) -> np.ndarray | None:
+        """使用 BitBlt 捕获指定屏幕矩形，返回BGR图像；失败返回None。"""
+        left, top, width, height = rect['left'], rect['top'], rect['width'], rect['height']
+        hdc_screen = user32.GetDC(0)
+        if not hdc_screen:
+            return None
+        try:
+            hdc_mem = gdi32.CreateCompatibleDC(hdc_screen)
+            bmp = gdi32.CreateCompatibleBitmap(hdc_screen, width, height)
+            if not hdc_mem or not bmp:
+                return None
+            old = gdi32.SelectObject(hdc_mem, bmp)
+            SRCCOPY = 0x00CC0020
+            ok = gdi32.BitBlt(hdc_mem, 0, 0, width, height, hdc_screen, left, top, SRCCOPY)
+            if not ok:
+                gdi32.SelectObject(hdc_mem, old)
+                gdi32.DeleteObject(bmp)
+                gdi32.DeleteDC(hdc_mem)
+                return None
+            # 读取位图数据
+            class BITMAPINFOHEADER(ctypes.Structure):
+                _fields_ = [
+                    ("biSize", wintypes.DWORD), ("biWidth", wintypes.LONG), ("biHeight", wintypes.LONG),
+                    ("biPlanes", wintypes.WORD), ("biBitCount", wintypes.WORD), ("biCompression", wintypes.DWORD),
+                    ("biSizeImage", wintypes.DWORD), ("biXPelsPerMeter", wintypes.LONG), ("biYPelsPerMeter", wintypes.LONG),
+                    ("biClrUsed", wintypes.DWORD), ("biClrImportant", wintypes.DWORD)
+                ]
+            class BITMAPINFO(ctypes.Structure):
+                _fields_ = [("bmiHeader", BITMAPINFOHEADER), ("bmiColors", wintypes.DWORD * 3)]
+            BI_RGB = 0
+            bmi = BITMAPINFO()
+            bmi.bmiHeader.biSize = ctypes.sizeof(BITMAPINFOHEADER)
+            bmi.bmiHeader.biWidth = width
+            bmi.bmiHeader.biHeight = -height  # 正向
+            bmi.bmiHeader.biPlanes = 1
+            bmi.bmiHeader.biBitCount = 24
+            bmi.bmiHeader.biCompression = BI_RGB
+            stride = ((width * 3 + 3) // 4) * 4
+            buf = (ctypes.c_ubyte * (stride * height))()
+            got = gdi32.GetDIBits(hdc_mem, bmp, 0, height, ctypes.byref(buf), ctypes.byref(bmi), 0)
+            gdi32.SelectObject(hdc_mem, old)
+            gdi32.DeleteObject(bmp)
+            gdi32.DeleteDC(hdc_mem)
+            if got != height:
+                return None
+            arr = np.frombuffer(buf, dtype=np.uint8).reshape((height, stride))[:, : width * 3]
+            img_bgr = arr.reshape((height, width, 3))
+            return img_bgr.copy()
+        finally:
+            user32.ReleaseDC(0, hdc_screen)
+
+    def _edges_of(self, bgr_or_gray: np.ndarray) -> np.ndarray:
+        """得到边缘域图像（复用缓冲以减少分配）。"""
+        if bgr_or_gray.ndim == 3:
+            gray = cv2.cvtColor(bgr_or_gray, cv2.COLOR_BGR2GRAY)
+        else:
+            gray = bgr_or_gray
+        try:
+            edges = cv2.Canny(gray, 60, 180)
+        except Exception:
+            gx = cv2.Sobel(gray, cv2.CV_16S, 1, 0, ksize=3)
+            gy = cv2.Sobel(gray, cv2.CV_16S, 0, 1, ksize=3)
+            edges = cv2.convertScaleAbs(cv2.addWeighted(cv2.convertScaleAbs(gx), 0.5,
+                                                        cv2.convertScaleAbs(gy), 0.5, 0))
+        return edges
+
+    def _match_best(self, img_edges: np.ndarray) -> Tuple[float, Tuple[int, int], Tuple[int, int]]:
+        """在边缘域中进行模板匹配，仅匹配少量模板（最多2个）。"""
         best = 0.0
         best_loc = (0, 0)
         best_wh = (0, 0)
-        if not self._templates:
+        batch = self._tpl_bank.get_next_batch(2)
+        if not batch:
             return best, best_loc, best_wh
-
-        for tpl, (tw, th) in self._templates:
-            if img.shape[0] < th or img.shape[1] < tw:
+        for tpl, (tw, th) in batch:
+            if img_edges.shape[0] < th or img_edges.shape[1] < tw:
                 continue
-            res = cv2.matchTemplate(img, tpl, cv2.TM_CCOEFF_NORMED)
-            minVal, maxVal, minLoc, maxLoc = cv2.minMaxLoc(res)
+            res = cv2.matchTemplate(img_edges, tpl, cv2.TM_CCOEFF_NORMED)
+            _, maxVal, _, maxLoc = cv2.minMaxLoc(res)
             if maxVal > best:
                 best = maxVal
                 best_loc = maxLoc
                 best_wh = (tw, th)
         return best, best_loc, best_wh
 
-    def _scan_once_and_maybe_click(self, sct: mss.mss) -> float:
-        """执行一次扫描并在命中时进行无感点击。返回最佳匹配得分。
-        增强版：支持坐标校正、调试模式和多屏幕环境。
+    def _scan_once_and_maybe_click(self, sct: mss.mss) -> Tuple[float, bool]:
+        """执行一次扫描并在命中时进行无感点击。返回 (score, matched)。
+        - 仅扫描“前台窗口客户区”与“配置ROI”的交集；
+        - 优先使用 BitBlt 捕获该区域，失败回退 mss；
+        - 在边缘域进行模板匹配；每轮仅处理少量模板以降低占用。
         """
         # 确保模板存在
-        if not self._templates:
+        if self._tpl_bank.count() == 0:
             self._load_templates(force=True)
-            if not self._templates:
+            if self._tpl_bank.count() == 0:
                 self.sig_status.emit("模板未就绪")
                 time.sleep(0.5)
-                return 0.0
+                return 0.0, False
 
-        # 获取显示器信息（支持多屏幕轮询）
-        if self.cfg.enable_multi_screen_polling:
-            # 多屏幕轮询模式：获取当前要轮询的显示器
-            current_monitor_idx = self._get_next_polling_monitor(sct)
-            # 临时修改配置中的显示器索引
-            original_monitor_idx = self.cfg.monitor_index
-            self.cfg.monitor_index = current_monitor_idx
-            monitor_info = self._get_monitor_info(sct, force_refresh=True)
-            # 恢复原始配置
-            self.cfg.monitor_index = original_monitor_idx
-        else:
-            # 单屏幕模式：使用配置中指定的显示器
-            monitor_info = self._get_monitor_info(sct)
-        
-        img, left, top = self._grab_roi(sct)
-        score, loc, wh = self._match_best(img)
+        ok, rect = self._calc_scan_rect()
+        if not ok:
+            return 0.0, False
+
+        # 捕获
+        img_bgr = self._capture_rect_blt(rect)
+        if img_bgr is None:
+            bbox = {"left": rect['left'], "top": rect['top'], "width": rect['width'], "height": rect['height']}
+            try:
+                raw = sct.grab(bbox)
+                img_bgr = np.asarray(raw)
+                if img_bgr.shape[2] == 4:
+                    img_bgr = img_bgr[:, :, :3]
+            except Exception as e:
+                self._logger.error(f"截屏失败: {e}")
+                return 0.0, False
+
+        img_edges = self._edges_of(img_bgr)
+        score, loc, wh = self._match_best(img_edges)
         threshold = max(0.0, min(1.0, float(self.cfg.threshold)))
 
         # 调试模式下记录匹配信息
@@ -438,6 +633,7 @@ class ScannerWorker(QtCore.QThread):
         else:
             self._consecutive = 0
 
+        matched = False
         now = time.monotonic()
         if self._consecutive >= max(1, self.cfg.min_detections) and now >= self._next_allowed:
             # 计算点击坐标（屏幕坐标，中心点 + 偏移）
@@ -445,8 +641,8 @@ class ScannerWorker(QtCore.QThread):
             w, h = wh
             
             # 基础坐标计算
-            base_cx = left + x + w // 2
-            base_cy = top + y + h // 2
+            base_cx = rect['left'] + x + w // 2
+            base_cy = rect['top'] + y + h // 2
             
             # 应用用户偏移
             offset_cx = base_cx + int(self.cfg.click_offset[0])
@@ -455,16 +651,14 @@ class ScannerWorker(QtCore.QThread):
             # 应用坐标校正
             final_cx, final_cy = self._apply_coordinate_correction(offset_cx, offset_cy)
             
-            # 验证坐标有效性
-            if not self._validate_coordinates(final_cx, final_cy, monitor_info):
-                self._logger.warning(f"点击坐标无效: ({final_cx},{final_cy})")
-                self.sig_log.emit(f"点击坐标无效: ({final_cx},{final_cy})")
+            # 坐标粗验
+            if final_cx < -10000 or final_cx > 100000 or final_cy < -10000 or final_cy > 100000:
                 self._consecutive = 0
-                return float(score)
+                return float(score), False
             
             # 保存匹配结果的调试图片
             if self.cfg.save_debug_images:
-                debug_img = img.copy()
+                debug_img = img_bgr.copy()
                 if len(debug_img.shape) == 2:  # 灰度图
                     debug_img = cv2.cvtColor(debug_img, cv2.COLOR_GRAY2BGR)
                 # 绘制匹配框和点击点
@@ -485,11 +679,15 @@ class ScannerWorker(QtCore.QThread):
                 self._logger.info("已点击: score=%.3f, pos=(%d,%d)", score, final_cx, final_cy)
                 self.sig_hit.emit(score, int(final_cx), int(final_cy))
                 self._next_allowed = now + max(0.0, float(self.cfg.cooldown_s))
+                self._scheduler.on_hit()
+                matched = True
             else:
                 self._logger.warning("点击发送失败: pos=(%d,%d)", final_cx, final_cy)
                 self.sig_log.emit(f"点击发送失败: ({final_cx},{final_cy})")
             
             # 重置累计
             self._consecutive = 0
+        else:
+            self._scheduler.on_miss()
 
-        return float(score)
+        return float(score), matched

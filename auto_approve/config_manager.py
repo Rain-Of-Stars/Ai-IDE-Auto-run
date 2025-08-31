@@ -75,6 +75,21 @@ class AppConfig:
     enable_multi_screen_polling: bool = False
     # 多屏幕轮询时的屏幕切换间隔（毫秒）
     screen_polling_interval_ms: int = 1000
+    # ===== 调度/事件驱动相关（新增） =====
+    # 扫描模式：'event'（事件驱动，推荐）或 'polling'（持续轮询）
+    scan_mode: str = "event"
+    # 积极扫描间隔（毫秒），针对白名单前台窗口
+    active_scan_interval_ms: int = 120
+    # 空闲扫描间隔（毫秒），非白名单窗口
+    idle_scan_interval_ms: int = 2000
+    # 未命中指数退避封顶（毫秒）
+    miss_backoff_ms_max: int = 5000
+    # 命中后的冷却时长（毫秒），影响下一次扫描时间
+    hit_cooldown_ms: int = 4000
+    # 进程白名单（事件驱动生效）
+    process_whitelist: List[str] = field(default_factory=lambda: ["Code.exe", "Windsurf.exe", "Trae.exe"])
+    # 将ROI动态绑定到前台窗口客户区（与ROI求交集）
+    bind_roi_to_hwnd: bool = True
 
 
 def _default_config_dict() -> Dict[str, Any]:
@@ -148,6 +163,14 @@ def load_config(path: Optional[str] = None) -> AppConfig:
         coordinate_transform_mode=str(data.get("coordinate_transform_mode", "auto")),
         enable_multi_screen_polling=bool(data.get("enable_multi_screen_polling", False)),
         screen_polling_interval_ms=int(data.get("screen_polling_interval_ms", 1000)),
+        # 新增：调度/事件驱动相关（向下兼容默认值）
+        scan_mode=str(data.get("scan_mode", "event")),
+        active_scan_interval_ms=int(data.get("active_scan_interval_ms", 120)),
+        idle_scan_interval_ms=int(data.get("idle_scan_interval_ms", 2000)),
+        miss_backoff_ms_max=int(data.get("miss_backoff_ms_max", 5000)),
+        hit_cooldown_ms=int(data.get("hit_cooldown_ms", 4000)),
+        process_whitelist=list(data.get("process_whitelist", ["Code.exe", "Windsurf.exe", "Trae.exe"])),
+        bind_roi_to_hwnd=bool(data.get("bind_roi_to_hwnd", True)),
     )
     return cfg
 
