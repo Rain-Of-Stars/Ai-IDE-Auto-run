@@ -23,7 +23,8 @@
 
 8.通知提示
 
-<img width="394" height="124" alt="image" src="https://github.com/user-attachments/assets/ba4205e1-b887-4b09-a61f-c1f0a39565cc" />
+<img width="378" height="118" alt="image" src="https://github.com/user-attachments/assets/629c3f97-9d41-493e-a6fd-e48684cbcbdc" />
+
 
 
 ## 🌟 主要特性
