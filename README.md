@@ -10,18 +10,19 @@
 
 4.用户决定能否开启log日志功能，如果开启log日志，需要将log日志输出到log.txt文件中，log日志包含时间
 
-<img width="862" height="592" alt="image" src="https://github.com/user-attachments/assets/1a36fe58-6543-4a83-b9a5-9042c6720159" />
+<img width="862" height="592" alt="image" src="https://github.com/user-attachments/assets/6c25b4a1-1935-44a3-be84-17ffe1001b95" />
+
 
 5.可以保存配置，通过json文件保存配置
 
 6.用户可截图要无感点击的区域，作为检测目标自行添加
 
-<img width="862" height="592" alt="image" src="https://github.com/user-attachments/assets/a1bce9b0-e5b0-4697-9ff7-169362afffd5" />
-
+<img width="862" height="592" alt="image" src="https://github.com/user-attachments/assets/b4f1a22f-a436-4f7b-85b8-a011bc814ed2" />
 
 7.多屏幕支持
 
-<img width="862" height="592" alt="image" src="https://github.com/user-attachments/assets/b6195368-5a22-459c-919a-21fb3f7d082a" />
+<img width="862" height="592" alt="image" src="https://github.com/user-attachments/assets/1d551324-2cde-4e72-b9de-983171f1b217" />
+
 
 8.通知提示
 
