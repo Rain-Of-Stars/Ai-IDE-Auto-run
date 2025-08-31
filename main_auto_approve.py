@@ -290,12 +290,30 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
 
     def _on_settings_accepted(self):
         """设置窗口点击保存后回调：重新加载并应用配置。"""
-        # 用户保存了配置
+        # 记录保存前关键字段，用于判断是否需要重启扫描线程
+        prev_cfg = getattr(self, "cfg", None)
+        prev_backend = getattr(prev_cfg, "capture_backend", "screen") if prev_cfg else "screen"
+        was_running = bool(self.worker is not None and self.worker.isRunning())
+
+        # 读取最新配置并应用通用开关
         self.cfg = load_config()
         enable_file_logging(self.cfg.enable_logging)
-        # 运行中则应用新配置
-        if self.worker is not None and self.worker.isRunning():
-            self.worker.update_config(self.cfg)
+
+        # 若线程在运行：
+        # - 当捕获后端发生变化（如 从“传统屏幕”切到“窗口级/自动”或相反），
+        #   需要重启线程以重新初始化具体后端与相关资源；
+        # - 其他参数变化仍走无中断的 update_config。
+        if was_running:
+            new_backend = getattr(self.cfg, "capture_backend", "screen")
+            if str(new_backend).lower() != str(prev_backend).lower():
+                # 先停止再延时启动，避免阻塞UI
+                self.stop_scanning()
+                QtCore.QTimer.singleShot(200, self.start_scanning)
+            else:
+                # 后端未变化，动态更新即可
+                self.worker.update_config(self.cfg)
+
+        # 立即反馈
         self.notify("设置", "配置已保存", QtWidgets.QSystemTrayIcon.Information, 2000)
 
     def _on_settings_finished(self, _result: int):
