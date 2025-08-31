@@ -48,5 +48,16 @@
   "verify_window_before_click": true,
   "coordinate_transform_mode": "auto",
   "enable_multi_screen_polling": true,
-  "screen_polling_interval_ms": 1000
+  "screen_polling_interval_ms": 500,
+  "scan_mode": "polling",
+  "active_scan_interval_ms": 20,
+  "idle_scan_interval_ms": 200,
+  "miss_backoff_ms_max": 500,
+  "hit_cooldown_ms": 0,
+  "process_whitelist": [
+    "Code.exe",
+    "Windsurf.exe",
+    "Trae.exe"
+  ],
+  "bind_roi_to_hwnd": false
 }

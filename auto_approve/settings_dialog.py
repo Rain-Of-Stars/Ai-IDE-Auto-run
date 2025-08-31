@@ -576,6 +576,9 @@ class SettingsDialog(QtWidgets.QDialog):
         self.nav.setObjectName("navTree")
         self.nav.setStyleSheet(
             """
+            /* 取消焦点虚线框，仅保留选中高亮 */
+            #navTree { outline: 0; }
+            #navTree::item { outline: 0; }
             #navTree::item:selected { background-color: #2F80ED; color: white; }
             #navTree::item:selected:active { background-color: #2F80ED; color: white; }
             #navTree::item:selected:!active { background-color: #2F80ED; color: white; }

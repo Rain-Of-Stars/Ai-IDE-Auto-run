@@ -94,6 +94,11 @@ QTreeWidget, QListWidget {
 QTreeWidget::item { padding: 6px 8px; }
 QTreeWidget::item:selected { background: #2F80ED; color: white; }
 
+/* 取消获得键盘焦点时的灰色虚线框，仅保留高亮色 */
+QTreeWidget, QListWidget, QTreeView, QListView {
+  outline: 0; /* 移除焦点虚线框 */
+}
+
 /* 分隔条 */
 QSplitter::handle { background: #3C3F44; }
 QSplitter::handle:hover { background: #2F80ED; }
