@@ -288,8 +288,11 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
         self.settings_dlg.show()
         self._focus_window(self.settings_dlg)
 
-    def _on_settings_accepted(self):
-        """设置窗口点击保存后回调：重新加载并应用配置。"""
+    def _on_settings_accepted(self, *_args):
+        """设置窗口点击保存后回调：重新加载并应用配置。
+        说明：兼容 SettingsDialog.saved(cfg: AppConfig) 信号携带的参数，
+        避免因参数不匹配导致回调未触发。
+        """
         # 记录保存前关键字段，用于判断是否需要重启扫描线程
         prev_cfg = getattr(self, "cfg", None)
         prev_backend = getattr(prev_cfg, "capture_backend", "screen") if prev_cfg else "screen"

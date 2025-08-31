@@ -51,7 +51,7 @@
   "coordinate_transform_mode": "auto",
   "enable_multi_screen_polling": true,
   "screen_polling_interval_ms": 1000,
-  "capture_backend": "screen",
+  "capture_backend": "window",
   "target_hwnd": 9242580,
   "target_window_title": "code",
   "window_title_partial_match": true,
