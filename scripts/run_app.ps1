@@ -8,7 +8,7 @@ $PSDefaultParameterValues['Out-File:Encoding'] = 'utf8'
 Write-Host 'OK: UTF-8 configured'
 
 # 使用指定的conda环境运行（如需更换请修改以下路径）
-$python = 'C:/Users/wcx/.conda/envs/use/python.exe'
+$python = 'C:/Users/xxxx/.conda/envs/use/python.exe'
 
 if (-not (Test-Path $python)) {
   Write-Warning "未找到指定Python: $python，改用PATH中的python。"
