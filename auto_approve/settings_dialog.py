@@ -84,6 +84,25 @@ class ImagePreviewDialog(QtWidgets.QDialog):
         scaled = self._pixmap.scaled(self._label.size(), QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
         self._label.setPixmap(scaled)
 
+
+class NoFocusDelegate(QtWidgets.QStyledItemDelegate):
+    """去除项视图(如QTreeWidget/QListWidget)的虚线焦点框委托。
+
+    原理：在绘制前清除`State_HasFocus`标志，交由默认样式绘制，从而仅保留
+    选中高亮(背景色/前景色)，不再绘制灰色虚线框。
+    """
+    def paint(self, painter: QtGui.QPainter, option: QtWidgets.QStyleOptionViewItem, index: QtCore.QModelIndex) -> None:
+        # 复制一份绘制参数，避免修改传入的option对象
+        opt = QtWidgets.QStyleOptionViewItem(option)
+        # 兼容不同PySide6枚举命名：优先使用StateFlag，否则回退旧常量名
+        try:
+            flag = QtWidgets.QStyle.StateFlag.State_HasFocus
+        except AttributeError:
+            flag = QtWidgets.QStyle.State_HasFocus
+        # 清除焦点状态位，避免绘制虚线框
+        opt.state &= ~flag
+        super().paint(painter, opt, index)
+
 class ScreenshotPreviewDialog(QtWidgets.QDialog):
     """截图确认预览对话框：显示图片，并提供保存/取消按钮。
 
@@ -379,6 +398,8 @@ class SettingsDialog(QtWidgets.QDialog):
         self.list_templates.setVerticalScrollMode(QtWidgets.QAbstractItemView.ScrollPerPixel)
         self.list_templates.setResizeMode(QtWidgets.QListView.Adjust)
         self.list_templates.setUniformItemSizes(False)
+        # 去除列表项的虚线焦点框，仅保留高亮
+        self.list_templates.setItemDelegate(NoFocusDelegate(self.list_templates))
         init_paths: List[str] = []
         if getattr(self.cfg, "template_paths", None):
             init_paths = list(self.cfg.template_paths)
@@ -547,6 +568,8 @@ class SettingsDialog(QtWidgets.QDialog):
             #navTree::item:hover { background-color: rgba(47,128,237,0.18); }
             """
         )
+        # 去除导航项的虚线焦点框，仅保留高亮
+        self.nav.setItemDelegate(NoFocusDelegate(self.nav))
         self.nav.setHeaderHidden(True)
         self.nav.setMaximumWidth(240)
 
