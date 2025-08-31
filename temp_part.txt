@@ -1,366 +1,3 @@
-# -*- coding: utf-8 -*-
-"""
-设置对话框：允许用户配置模板路径、阈值、扫描间隔、ROI、显示器索引、冷却时间、
-灰度/多尺度/缩放倍率、点击偏移、最少命中帧、启动即扫描与日志开关，并保存到 JSON。
-"""
-from __future__ import annotations
-import os
-from typing import Tuple, List
-
-from PySide6 import QtWidgets, QtCore, QtGui
-
-from auto_approve.config_manager import AppConfig, ROI, save_config, load_config
-from auto_approve.path_utils import get_app_base_dir
-
-
-class CustomCheckBox(QtWidgets.QCheckBox):
-    """自定义复选框，使用代码绘制白色✓符号，不依赖图标资源文件。"""
-    
-    def __init__(self, text="", parent=None):
-        super().__init__(text, parent)
-        
-    def paintEvent(self, event):
-        """重写绘制事件，自定义绘制选中状态的白色✓符号。"""
-        # 先调用父类的绘制方法绘制基础样式
-        super().paintEvent(event)
-        
-        # 如果选中状态，绘制白色✓符号
-        if self.isChecked():
-            painter = QtGui.QPainter(self)
-            painter.setRenderHint(QtGui.QPainter.Antialiasing)
-            
-            # 获取指示器的矩形区域
-            option = QtWidgets.QStyleOptionButton()
-            self.initStyleOption(option)
-            indicator_rect = self.style().subElementRect(
-                QtWidgets.QStyle.SE_CheckBoxIndicator, option, self
-            )
-            
-            # 设置白色画笔绘制✓符号
-            painter.setPen(QtGui.QPen(QtGui.QColor(255, 255, 255), 2, QtCore.Qt.SolidLine, QtCore.Qt.RoundCap, QtCore.Qt.RoundJoin))
-            
-            # 计算✓符号的坐标
-            center_x = indicator_rect.center().x()
-            center_y = indicator_rect.center().y()
-            size = min(indicator_rect.width(), indicator_rect.height()) * 0.6
-            
-            # 绘制✓符号的两条线段
-            # 第一条线段：从左下到中心
-            x1 = center_x - size * 0.3
-            y1 = center_y + size * 0.1
-            x2 = center_x - size * 0.1
-            y2 = center_y + size * 0.3
-            painter.drawLine(QtCore.QPointF(x1, y1), QtCore.QPointF(x2, y2))
-            
-            # 第二条线段：从中心到右上
-            x3 = center_x + size * 0.4
-            y3 = center_y - size * 0.2
-            painter.drawLine(QtCore.QPointF(x2, y2), QtCore.QPointF(x3, y3))
-            
-            painter.end()
-
-class ImagePreviewDialog(QtWidgets.QDialog):
-    """简单的图片预览对话框，随窗口大小自适应缩放。"""
-    def __init__(self, pixmap: QtGui.QPixmap, path: str, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle(f"预览 - {os.path.basename(path)}")
-        self.resize(720, 540)
-        self._pixmap = pixmap
-        self._label = QtWidgets.QLabel()
-        self._label.setAlignment(QtCore.Qt.AlignCenter)
-        v = QtWidgets.QVBoxLayout(self)
-        v.setContentsMargins(8, 8, 8, 8)
-        v.addWidget(self._label, 1)
-        self._update_view()
-
-    def resizeEvent(self, e: QtGui.QResizeEvent) -> None:
-        super().resizeEvent(e)
-        self._update_view()
-
-    def _update_view(self):
-        if self._pixmap.isNull():
-            self._label.setText("无法加载图片")
-            return
-        scaled = self._pixmap.scaled(self._label.size(), QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
-        self._label.setPixmap(scaled)
-
-
-class NoFocusDelegate(QtWidgets.QStyledItemDelegate):
-    """去除项视图(如QTreeWidget/QListWidget)的虚线焦点框委托。
-
-    原理：在绘制前清除`State_HasFocus`标志，交由默认样式绘制，从而仅保留
-    选中高亮(背景色/前景色)，不再绘制灰色虚线框。
-    """
-    def paint(self, painter: QtGui.QPainter, option: QtWidgets.QStyleOptionViewItem, index: QtCore.QModelIndex) -> None:
-        # 复制一份绘制参数，避免修改传入的option对象
-        opt = QtWidgets.QStyleOptionViewItem(option)
-        # 兼容不同PySide6枚举命名：优先使用StateFlag，否则回退旧常量名
-        try:
-            flag = QtWidgets.QStyle.StateFlag.State_HasFocus
-        except AttributeError:
-            flag = QtWidgets.QStyle.State_HasFocus
-        # 清除焦点状态位，避免绘制虚线框
-        opt.state &= ~flag
-        super().paint(painter, opt, index)
-
-class ScreenshotPreviewDialog(QtWidgets.QDialog):
-    """截图确认预览对话框：显示图片，并提供保存/取消按钮。
-
-    设计要点：
-    - 仅负责展示与返回用户意图，不直接负责文件保存；
-    - 保存按钮对象名设为primary，匹配现有QSS主按钮样式；
-    - 预览区自适应窗口尺寸，平滑缩放。
-    """
-    def __init__(self, pixmap: QtGui.QPixmap, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("截图预览")
-        self.resize(820, 580)
-        self._pixmap = pixmap
-
-        # 预览标签
-        self._label = QtWidgets.QLabel()
-        self._label.setAlignment(QtCore.Qt.AlignCenter)
-
-        # 底部按钮：保存/取消（保存置于首位并标记为主按钮）
-        self.btn_save = QtWidgets.QPushButton("保存")
-        self.btn_save.setObjectName("primary")  # 使用样式表中的主按钮配色
-        self.btn_cancel = QtWidgets.QPushButton("取消")
-        self.btn_save.clicked.connect(self.accept)
-        self.btn_cancel.clicked.connect(self.reject)
-
-        # 布局
-        v = QtWidgets.QVBoxLayout(self)
-        v.setContentsMargins(8, 8, 8, 8)
-        v.addWidget(self._label, 1)
-        h = QtWidgets.QHBoxLayout()
-        h.addStretch(1)
-        h.addWidget(self.btn_save)
-        h.addWidget(self.btn_cancel)
-        v.addLayout(h)
-
-        self._update_view()
-
-    def resizeEvent(self, e: QtGui.QResizeEvent) -> None:
-        super().resizeEvent(e)
-        self._update_view()
-
-    def _update_view(self):
-        """更新预览图显示，按保持比例缩放到标签尺寸。"""
-        if self._pixmap.isNull():
-            self._label.setText("无法加载图片")
-            return
-        scaled = self._pixmap.scaled(self._label.size(), QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
-        self._label.setPixmap(scaled)
-
-class RegionSnipDialog(QtWidgets.QDialog):
-    """全屏截图取框对话框：左键拖拽选择；右键或Esc取消。
-
-    关键增强：
-    - 跟随鼠标所在屏幕：在未拖拽时，鼠标移到哪个屏幕，取框覆盖就切到哪个屏幕；
-    - 高DPI安全：按截图像素比进行区域拷贝，避免缩放误差。
-    """
-    def __init__(self, screen: QtGui.QScreen, background: QtGui.QPixmap, parent=None):
-        super().__init__(parent)
-        # 使用无边框置顶窗口，启用窗口级透明背景，以系统真实桌面为背景。
-        # 这样可避免预抓屏幕图在混合DPI下的错位，选区所见即所得。
-        self.setWindowFlags(QtCore.Qt.FramelessWindowHint | QtCore.Qt.Dialog | QtCore.Qt.WindowStaysOnTopHint)
-        self.setWindowModality(QtCore.Qt.ApplicationModal)
-        self.setAttribute(QtCore.Qt.WA_TranslucentBackground, True)
-        # 对话框关闭后立即销毁，避免定时器等异步回调导致重新显示
-        self.setAttribute(QtCore.Qt.WA_DeleteOnClose, True)
-        self._screen = screen  # 当前覆盖的屏幕
-        self._origin = None
-        self._current = None
-        self.selected_pixmap: QtGui.QPixmap | None = None
-        # 关闭标志：accept/reject后置为True，所有异步流程应尽快退出
-        self._closing: bool = False
-        # 绑定到当前屏幕并匹配几何
-        self._apply_screen(screen)
-        self.setGeometry(screen.geometry())
-        self._hint_font = self.font()
-        self._hint_font.setPointSize(self._hint_font.pointSize() + 1)
-
-        # 拖拽标志：按下左键开始，释放后结束
-        self._dragging: bool = False
-
-        # 鼠标屏幕跟随定时器：未拖拽时根据鼠标位置切换覆盖屏幕
-        self._cursor_timer = QtCore.QTimer(self)
-        self._cursor_timer.setInterval(80)  # 80ms足够流畅
-        self._cursor_timer.timeout.connect(self._follow_cursor_screen)
-        self._cursor_timer.start()
-
-    # ---------- 生命周期与关闭控制 ----------
-    def _shutdown_timer(self):
-        """安全停止内部定时器（多次调用无副作用）。"""
-        try:
-            if hasattr(self, "_cursor_timer") and self._cursor_timer is not None:
-                self._cursor_timer.stop()
-                try:
-                    self._cursor_timer.timeout.disconnect(self._follow_cursor_screen)
-                except Exception:
-                    pass
-        except Exception:
-            pass
-
-    def accept(self) -> None:
-        """确认选择：停止定时器并隐藏窗口，避免覆盖层残留。"""
-        self._dragging = False
-        self._closing = True
-        self._shutdown_timer()
-        # 先隐藏，防止定时器尾调用触发 _switch_to_screen 把窗口又显示出来
-        try:
-            # 降级去顶置，避免极端情况下的置顶残留
-            self.setWindowFlag(QtCore.Qt.WindowStaysOnTopHint, False)
-            self.setWindowOpacity(0.0)
-            self.show()  # 应用窗口标志变更
-            self.hide()
-        except Exception:
-            pass
-        # 立即刷新事件队列，尽快让系统移除窗口
-        try:
-            QtWidgets.QApplication.processEvents(QtCore.QEventLoop.ExcludeUserInputEvents)
-        except Exception:
-            pass
-        super().accept()
-
-    def reject(self) -> None:
-        """取消：同样停止定时器并隐藏窗口。"""
-        self._dragging = False
-        self._closing = True
-        self._shutdown_timer()
-        try:
-            self.setWindowFlag(QtCore.Qt.WindowStaysOnTopHint, False)
-            self.setWindowOpacity(0.0)
-            self.show()
-            self.hide()
-        except Exception:
-            pass
-        try:
-            QtWidgets.QApplication.processEvents(QtCore.QEventLoop.ExcludeUserInputEvents)
-        except Exception:
-            pass
-        super().reject()
-
-    def closeEvent(self, e: QtGui.QCloseEvent) -> None:
-        """关闭事件：兜底停止定时器。"""
-        self._closing = True
-        self._shutdown_timer()
-        super().closeEvent(e)
-
-    def _apply_screen(self, screen: QtGui.QScreen):
-        """将窗口绑定到指定屏幕（用于跨屏与DPI调整）。"""
-        try:
-            handle = self.windowHandle()
-            if handle is not None and screen is not None:
-                handle.setScreen(screen)
-        except Exception:
-            pass
-
-    def _switch_to_screen(self, screen: QtGui.QScreen):
-        """切换覆盖到指定屏幕：更新窗口几何与背景截图，并重置选择状态。"""
-        # 若窗口已不可见（例如刚刚 accept/reject 关闭），避免被再次显示
-        if self._closing or not self.isVisible():
-            return
-        if screen is None or screen is self._screen:
-            return
-        self._screen = screen
-        # 切换屏幕后重置选择，避免坐标空间混淆
-        self._origin = None
-        self._current = None
-        self._apply_screen(self._screen)
-        self.setGeometry(self._screen.geometry())
-        # 仅在可见状态下刷新前置，避免在关闭过程中被重新显示
-        if not self._closing and self.isVisible():
-            try:
-                self.raise_(); self.activateWindow(); self.show()
-            except Exception:
-                pass
-        self.update()
-
-    def _follow_cursor_screen(self):
-        """定时检查鼠标所在屏幕并切换覆盖，拖拽中不切屏。"""
-        # 窗口不可见或正在拖拽时不做任何切换
-        if self._closing or not self.isVisible() or self._dragging:
-            return
-        pos = QtGui.QCursor.pos()
-        scr = QtGui.QGuiApplication.screenAt(pos)
-        # 兼容回退：若screenAt返回None，手动根据geometry判断
-        if scr is None:
-            for s in QtGui.QGuiApplication.screens():
-                if s.geometry().contains(pos):
-                    scr = s
-                    break
-        if scr is not None and scr is not self._screen:
-            self._switch_to_screen(scr)
-
-    def paintEvent(self, event: QtGui.QPaintEvent) -> None:
-        """绘制半透明遮罩，选区内部完全透明以直透桌面。"""
-        p = QtGui.QPainter(self)
-        p.setRenderHint(QtGui.QPainter.Antialiasing)
-        # 覆盖整屏半透明蒙版
-        p.fillRect(self.rect(), QtGui.QColor(0, 0, 0, 96))
-        if self._origin and self._current:
-            rect = QtCore.QRect(self._origin, self._current).normalized()
-            # 清除选区为透明，仅保留“挖洞”效果；不绘制任何边框
-            p.setCompositionMode(QtGui.QPainter.CompositionMode_Clear)
-            p.fillRect(rect, QtCore.Qt.transparent)
-            # 恢复正常模式但不再绘制边框或文字
-            p.setCompositionMode(QtGui.QPainter.CompositionMode_SourceOver)
-        p.end()
-
-    def mousePressEvent(self, e: QtGui.QMouseEvent) -> None:
-        if e.button() == QtCore.Qt.LeftButton:
-            self._dragging = True
-            self._origin = e.pos()
-            self._current = e.pos()
-            self.update()
-
-    def mouseMoveEvent(self, e: QtGui.QMouseEvent) -> None:
-        if self._origin:
-            self._current = e.pos()
-            self.update()
-
-    def mouseReleaseEvent(self, e: QtGui.QMouseEvent) -> None:
-        if e.button() == QtCore.Qt.LeftButton and self._origin and self._current:
-            rect = QtCore.QRect(self._origin, self._current).normalized()
-            if rect.width() > 2 and rect.height() > 2:
-                # 实时抓取当前屏幕并按DPR裁切，确保跨屏与混合DPI准确
-                shot = self._screen.grabWindow(0)
-                dpr = shot.devicePixelRatio() or self._screen.devicePixelRatio()
-                src = QtCore.QRect(int(rect.x() * dpr), int(rect.y() * dpr), int(rect.width() * dpr), int(rect.height() * dpr))
-                self.selected_pixmap = shot.copy(src)
-            # 先结束拖拽，再accept，减少与定时器的竞态
-            self._dragging = False
-            self.accept()
-        elif e.button() == QtCore.Qt.RightButton:
-            self.reject()
-        # 任意释放都结束拖拽
-        self._dragging = False
-
-    def keyPressEvent(self, e: QtGui.QKeyEvent) -> None:
-        if e.key() == QtCore.Qt.Key_Escape:
-            self.reject()
-            self._dragging = False
-
-def _parse_pair(text: str, typ=float) -> Tuple:
-    """解析形如 "a,b" 的文本为二元组，允许空格。"""
-    parts = [p.strip() for p in text.replace("；", ",").split(",") if p.strip()]
-    if len(parts) != 2:
-        raise ValueError("请输入两个以逗号分隔的数值")
-    return typ(parts[0]), typ(parts[1])
-
-
-def _parse_scales(text: str) -> Tuple[float, ...]:
-    """解析倍率列表，如 "1.0,1.25,0.8"。"""
-    parts = [p.strip() for p in text.replace("；", ",").split(",") if p.strip()]
-    vals = []
-    for p in parts:
-        vals.append(float(p))
-    if not vals:
-        vals = [1.0]
-    return tuple(vals)
-
-
 class SettingsDialog(QtWidgets.QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -481,35 +118,18 @@ class SettingsDialog(QtWidgets.QDialog):
         vtpl.addSpacing(8)
         vtpl.addWidget(self.cb_auto_start)
 
-        # — 常规 · 扫描与性能（仅保留扫描相关，便于与其他设置解耦）
+        # — 常规 · 日志与显示器
         page_general_misc = QtWidgets.QWidget()
         form_misc = QtWidgets.QFormLayout(page_general_misc)
         form_misc.setLabelAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
         form_misc.setContentsMargins(16, 16, 16, 16)
+        form_misc.addRow("显示器索引", self.sb_monitor)
         form_misc.addRow("扫描间隔", self.sb_interval)
         form_misc.addRow("最少命中帧", self.sb_min_det)
-
-        # — 常规 · 显示器设置（单独页）
-        page_display = QtWidgets.QWidget()
-        form_display = QtWidgets.QFormLayout(page_display)
-        form_display.setLabelAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
-        form_display.setContentsMargins(16, 16, 16, 16)
-        form_display.addRow("显示器索引", self.sb_monitor)
-
-        # — 常规 · 日志（单独页）
-        page_log = QtWidgets.QWidget()
-        form_log = QtWidgets.QFormLayout(page_log)
-        form_log.setLabelAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
-        form_log.setContentsMargins(16, 16, 16, 16)
-        form_log.addRow(self.cb_logging)
-
-        # — 常规 · 通知（单独页）
+        form_misc.addRow(self.cb_logging)
+        # 通知开关：由用户决定是否显示托盘通知
         self.cb_notifications = CustomCheckBox("启用通知提示"); self.cb_notifications.setChecked(self.cfg.enable_notifications)
-        page_notify = QtWidgets.QWidget()
-        form_notify = QtWidgets.QFormLayout(page_notify)
-        form_notify.setLabelAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
-        form_notify.setContentsMargins(16, 16, 16, 16)
-        form_notify.addRow(self.cb_notifications)
+        form_misc.addRow(self.cb_notifications)
 
         # — 匹配 · 参数与尺度
         page_match = QtWidgets.QWidget()
@@ -571,19 +191,8 @@ class SettingsDialog(QtWidgets.QDialog):
         form_debug.addRow("调试图片目录", self.le_debug_dir)
         form_debug.addRow(self.cb_enhanced_finding)
 
-        # 加入堆叠（注意：新增了 显示器/日志/通知 三个页面）
-        pages = [
-            page_general_tpl,    # 0
-            page_general_misc,   # 1 扫描与性能
-            page_display,        # 2 显示器设置
-            page_log,            # 3 日志
-            page_notify,         # 4 通知
-            page_match,          # 5
-            page_click,          # 6
-            page_roi,            # 7
-            page_multi,          # 8
-            page_debug           # 9
-        ]
+        # 加入堆叠
+        pages = [page_general_tpl, page_general_misc, page_match, page_click, page_roi, page_multi, page_debug]
         for p in pages:
             self.stack.addWidget(p)
 
@@ -608,45 +217,38 @@ class SettingsDialog(QtWidgets.QDialog):
         it_general = QtWidgets.QTreeWidgetItem(["常规"])
         it_general_tpl = QtWidgets.QTreeWidgetItem(["模板与启动"])
         it_general_tpl.setData(0, QtCore.Qt.ItemDataRole.UserRole, 0)
-        # 将原“日志与显示器”拆分为四项：扫描与性能、显示器设置、日志、通知
-        it_general_misc = QtWidgets.QTreeWidgetItem(["扫描与性能"])  # index 1
+        it_general_misc = QtWidgets.QTreeWidgetItem(["日志与显示器"])
         it_general_misc.setData(0, QtCore.Qt.ItemDataRole.UserRole, 1)
-        it_general_display = QtWidgets.QTreeWidgetItem(["显示器设置"])  # index 2
-        it_general_display.setData(0, QtCore.Qt.ItemDataRole.UserRole, 2)
-        it_general_log = QtWidgets.QTreeWidgetItem(["日志"])  # index 3
-        it_general_log.setData(0, QtCore.Qt.ItemDataRole.UserRole, 3)
-        it_general_notify = QtWidgets.QTreeWidgetItem(["通知"])  # index 4
-        it_general_notify.setData(0, QtCore.Qt.ItemDataRole.UserRole, 4)
-        it_general.addChildren([it_general_tpl, it_general_misc, it_general_display, it_general_log, it_general_notify])
+        it_general.addChildren([it_general_tpl, it_general_misc])
 
         # 顶级：匹配
         it_match = QtWidgets.QTreeWidgetItem(["匹配"])
         it_match_param = QtWidgets.QTreeWidgetItem(["参数与尺度"])
-        it_match_param.setData(0, QtCore.Qt.ItemDataRole.UserRole, 5)
+        it_match_param.setData(0, QtCore.Qt.ItemDataRole.UserRole, 2)
         it_match.addChild(it_match_param)
 
         # 顶级：点击
         it_click = QtWidgets.QTreeWidgetItem(["点击"])
         it_click_main = QtWidgets.QTreeWidgetItem(["点击与坐标"])
-        it_click_main.setData(0, QtCore.Qt.ItemDataRole.UserRole, 6)
+        it_click_main.setData(0, QtCore.Qt.ItemDataRole.UserRole, 3)
         it_click.addChild(it_click_main)
 
         # 顶级：区域
         it_roi = QtWidgets.QTreeWidgetItem(["区域"])
         it_roi_page = QtWidgets.QTreeWidgetItem(["ROI 区域"])
-        it_roi_page.setData(0, QtCore.Qt.ItemDataRole.UserRole, 7)
+        it_roi_page.setData(0, QtCore.Qt.ItemDataRole.UserRole, 4)
         it_roi.addChild(it_roi_page)
 
         # 顶级：多屏幕
         it_multi = QtWidgets.QTreeWidgetItem(["多屏幕"])
         it_multi_page = QtWidgets.QTreeWidgetItem(["轮询"])
-        it_multi_page.setData(0, QtCore.Qt.ItemDataRole.UserRole, 8)
+        it_multi_page.setData(0, QtCore.Qt.ItemDataRole.UserRole, 5)
         it_multi.addChild(it_multi_page)
 
         # 顶级：调试
         it_debug = QtWidgets.QTreeWidgetItem(["调试"])
         it_debug_page = QtWidgets.QTreeWidgetItem(["调试与输出"])
-        it_debug_page.setData(0, QtCore.Qt.ItemDataRole.UserRole, 9)
+        it_debug_page.setData(0, QtCore.Qt.ItemDataRole.UserRole, 6)
         it_debug.addChild(it_debug_page)
 
         self.nav.addTopLevelItems([it_general, it_match, it_click, it_roi, it_multi, it_debug])
@@ -897,15 +499,3 @@ class SettingsDialog(QtWidgets.QDialog):
         save_config(cfg)
         self.accept()
 
-    def _on_nav_changed(self, cur: QtWidgets.QTreeWidgetItem, prev: QtWidgets.QTreeWidgetItem | None):
-        """左侧菜单变化时切换到对应页面。"""
-        if not cur:
-            return
-        page_index = cur.data(0, QtCore.Qt.ItemDataRole.UserRole)
-        # 若点击的是父节点，则默认跳转到第一个子节点
-        if page_index is None and cur.childCount() > 0:
-            child = cur.child(0)
-            self.nav.setCurrentItem(child)
-            return
-        if isinstance(page_index, int):
-            self.stack.setCurrentIndex(page_index)

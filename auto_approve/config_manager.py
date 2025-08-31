@@ -39,6 +39,8 @@ class AppConfig:
     cooldown_s: float = 5.0
     # 是否启用日志
     enable_logging: bool = False
+    # 是否启用托盘通知
+    enable_notifications: bool = True
     # 是否将图像转灰度后再匹配，降低计算量
     grayscale: bool = True
     # 是否进行多尺度匹配
@@ -130,6 +132,7 @@ def load_config(path: Optional[str] = None) -> AppConfig:
         threshold=float(data.get("threshold", 0.88)),
         cooldown_s=float(data.get("cooldown_s", 5.0)),
         enable_logging=bool(data.get("enable_logging", False)),
+        enable_notifications=bool(data.get("enable_notifications", True)),
         grayscale=bool(data.get("grayscale", True)),
         multi_scale=bool(data.get("multi_scale", False)),
         scales=tuple(data.get("scales", [1.0, 1.25, 0.8])),

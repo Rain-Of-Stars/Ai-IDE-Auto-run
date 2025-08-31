@@ -147,9 +147,9 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
         # 双击托盘图标：打开设置
         self.activated.connect(self._on_activated)
 
-        # 初始通知
+        # 初始通知（尊重通知开关）
         self.show()
-        self.showMessage("AI-IDE-Auto-Run", "已在后台托盘运行", QtWidgets.QSystemTrayIcon.Information, 3000)
+        self.notify("AI-IDE-Auto-Run", "已在后台托盘运行", QtWidgets.QSystemTrayIcon.Information, 3000)
 
         # 自动启动扫描
         if self.cfg.auto_start_scan:
@@ -220,14 +220,29 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
         self.logger.info("扫描已停止")
 
     # ---------- 托盘菜单逻辑 ----------
+    def notify(self, title: str, message: str, icon: QtWidgets.QSystemTrayIcon.MessageIcon = QtWidgets.QSystemTrayIcon.Information, msecs: int = 2000):
+        """托盘通知封装：根据配置决定是否显示通知。
+        参数说明：
+        - title/message: 通知标题与内容
+        - icon: 通知图标类型
+        - msecs: 显示毫秒数
+        """
+        try:
+            # 读取最新配置以确保切换后立即生效
+            self.cfg = load_config()
+        except Exception:
+            pass
+        if getattr(self.cfg, "enable_notifications", True):
+            # 仅在允许时显示托盘气泡
+            self.showMessage(title, message, icon, msecs)
 
     def toggle_logging(self, checked: bool):
         self.cfg = load_config()
         self.cfg.enable_logging = bool(checked)
         save_config(self.cfg)
         enable_file_logging(self.cfg.enable_logging)
-        self.showMessage("日志设置", "文件日志已{}".format("开启" if checked else "关闭"),
-                         QtWidgets.QSystemTrayIcon.Information, 2000)
+        self.notify("日志设置", "文件日志已{}".format("开启" if checked else "关闭"),
+                    QtWidgets.QSystemTrayIcon.Information, 2000)
 
     def open_settings(self):
         """打开设置窗口：若已存在则仅聚焦置前，不重复创建。
@@ -258,7 +273,7 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
         # 运行中则应用新配置
         if self.worker is not None and self.worker.isRunning():
             self.worker.update_config(self.cfg)
-        self.showMessage("设置", "配置已保存", QtWidgets.QSystemTrayIcon.Information, 2000)
+        self.notify("设置", "配置已保存", QtWidgets.QSystemTrayIcon.Information, 2000)
 
     def _on_settings_finished(self, _result: int):
         """设置窗口关闭后回调：清理单实例引用。"""
@@ -326,8 +341,8 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
         self.setToolTip(f"AI-IDE-Auto-Run - {text}")
 
     def on_hit(self, score: float, sx: int, sy: int):
-        self.showMessage("已自动点击", f"score={score:.3f} @ ({sx},{sy})",
-                         QtWidgets.QSystemTrayIcon.Information, 2500)
+        self.notify("已自动点击", f"score={score:.3f} @ ({sx},{sy})",
+                    QtWidgets.QSystemTrayIcon.Information, 2500)
 
     def on_log(self, text: str):
         # 仅提示关键日志，避免频繁打扰
