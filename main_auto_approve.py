@@ -105,17 +105,32 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
 
         # 菜单
         self.menu = QtWidgets.QMenu()
+        # 顶部三行状态：运行状态/后端/详细（屏幕轮询或匹配分）
         self.act_status = QtGui.QAction("状态: 未启动")
         self.act_status.setEnabled(False)
+        self.act_backend = QtGui.QAction("后端: -")
+        self.act_backend.setEnabled(False)
+        self.act_detail = QtGui.QAction("")
+        self.act_detail.setEnabled(False)
 
         self.act_start = QtGui.QAction("开始扫描")
-        self.act_start.triggered.connect(self.start_scanning)
-
         self.act_stop = QtGui.QAction("停止扫描")
-        self.act_stop.setEnabled(False)
+        # 互斥勾选用于显示当前状态（白色✓）
+        self._run_group = QtGui.QActionGroup(self.menu)
+        self._run_group.setExclusive(True)
+        self.act_start.setCheckable(True)
+        self.act_stop.setCheckable(True)
+        self._run_group.addAction(self.act_start)
+        self._run_group.addAction(self.act_stop)
+        # 默认未启动：勾选“停止扫描”
+        self.act_stop.setChecked(True)
+        # 连接行为
+        self.act_start.triggered.connect(self.start_scanning)
         self.act_stop.triggered.connect(self.stop_scanning)
 
         self.menu.addAction(self.act_status)
+        self.menu.addAction(self.act_backend)
+        self.menu.addAction(self.act_detail)
         self.menu.addSeparator()
         self.menu.addAction(self.act_start)
         self.menu.addAction(self.act_stop)
@@ -196,9 +211,13 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
         self._bind_worker_signals()
         self.worker.start()
 
-        self.act_start.setEnabled(False)
-        self.act_stop.setEnabled(True)
+        # 菜单项始终可点；用✓表示当前状态
+        self.act_start.setChecked(True)
+        self.act_stop.setChecked(False)
         self.act_status.setText("状态: 运行中")
+        # 启动时清空附加状态行
+        self.act_backend.setText("后端: -")
+        self.act_detail.setText("")
         self.setToolTip("AI-IDE-Auto-Run - 运行中")
         self.logger.info("扫描已启动")
 
@@ -209,9 +228,12 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
         self.worker.wait(3000)
         self.worker = None
 
-        self.act_start.setEnabled(True)
-        self.act_stop.setEnabled(False)
+        # 菜单项始终可点；用✓表示当前状态
+        self.act_start.setChecked(False)
+        self.act_stop.setChecked(True)
         self.act_status.setText("状态: 未启动")
+        self.act_backend.setText("后端: -")
+        self.act_detail.setText("")
         self.setToolTip("AI-IDE-Auto-Run - 未启动")
         self.logger.info("扫描已停止")
 
@@ -256,6 +278,11 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
         self.settings_dlg.setAttribute(QtCore.Qt.WA_DeleteOnClose, True)
         # 连接信号：保存后更新配置；无论结果如何，结束时清理引用
         self.settings_dlg.accepted.connect(self._on_settings_accepted)
+        # 新增：监听“saved”信号（保存但不关闭窗口）
+        try:
+            self.settings_dlg.saved.connect(self._on_settings_accepted)
+        except Exception:
+            pass
         self.settings_dlg.finished.connect(self._on_settings_finished)
         # 显示并置前（使用非阻塞show，保证托盘可响应后续点击）
         self.settings_dlg.show()
@@ -304,8 +331,54 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
     # ---------- 信号响应 ----------
 
     def on_status(self, text: str):
-        self.act_status.setText(f"状态: {text}")
-        self.setToolTip(f"AI-IDE-Auto-Run - {text}")
+        """更新托盘菜单的状态行。
+        规则：
+        - 第一行：仅显示运行状态（原样或去掉后续分段）
+        - 第二行：后端信息（若存在“后端:”片段），否则为“后端: -”
+        - 第三行：详细信息
+          • 多屏轮询：还原为“当前屏幕: N | 匹配: S”
+          • 否则：使用“上次匹配: S”
+        """
+        raw = text or ""
+        parts = [p.strip() for p in raw.split('|')]
+
+        # 行1：状态
+        line1 = parts[0] if parts else raw
+        self.act_status.setText(f"状态: {line1}")
+
+        # 行2：后端
+        backend = "-"
+        for p in parts:
+            if p.startswith("后端:"):
+                backend = p.split("后端:", 1)[1].strip()
+                break
+        self.act_backend.setText(f"后端: {backend}")
+
+        # 行3：详细
+        detail = ""
+        # 优先还原多屏轮询提示
+        has_multi = any("多屏轮询" in p for p in parts)
+        cur_screen = None
+        score_text = None
+        for p in parts:
+            if p.startswith("当前屏幕:"):
+                cur_screen = p
+            if p.startswith("匹配:") or p.startswith("上次匹配:"):
+                # 统一提取分数部分
+                score_text = p.replace("上次匹配:", "匹配:").strip()
+        if has_multi and (cur_screen or score_text):
+            detail = " | ".join(filter(None, [cur_screen, score_text]))
+        else:
+            # 非多屏：回退为“上次匹配”或“匹配”片段
+            for p in parts[::-1]:
+                if p.startswith("上次匹配:") or p.startswith("匹配:"):
+                    detail = p
+                    break
+        self.act_detail.setText(detail)
+
+        # Tooltip 使用多行展示
+        tooltip = "AI-IDE-Auto-Run - " + "\n".join(filter(None, [self.act_status.text(), self.act_backend.text(), self.act_detail.text()]))
+        self.setToolTip(tooltip)
 
     def on_hit(self, score: float, sx: int, sy: int):
         self.notify("已自动点击", f"score={score:.3f} @ ({sx},{sy})",

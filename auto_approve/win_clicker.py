@@ -40,6 +40,10 @@ user32.ChildWindowFromPointEx.argtypes = [wintypes.HWND, POINT, wintypes.UINT]
 user32.ScreenToClient.restype = wintypes.BOOL
 user32.ScreenToClient.argtypes = [wintypes.HWND, ctypes.POINTER(POINT)]
 
+# 将客户端坐标转换为屏幕坐标（用于在父/子窗口间映射坐标）
+user32.ClientToScreen.restype = wintypes.BOOL
+user32.ClientToScreen.argtypes = [wintypes.HWND, ctypes.POINTER(POINT)]
+
 user32.PostMessageW.restype = wintypes.BOOL
 user32.PostMessageW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
 
@@ -273,6 +277,99 @@ def post_click_screen_pos(sx: int, sy: int, debug: bool = False, enhanced_findin
         _get_logger().info(f"点击消息发送结果: 按下={bool(result1)}, 抬起={bool(result2)}, 总体={success}")
     
     return success
+
+
+def post_click_client_pos(hwnd: int, cx: int, cy: int, *, debug: bool = False,
+                          find_deep_child: bool = True, verify_window: bool = True,
+                          send_mousemove: bool = True) -> bool:
+    """向指定窗口的客户端坐标发送无感点击（不聚焦，不移动系统鼠标）。
+
+    典型用法：模板在“窗口级截图”中匹配得到的坐标为窗口内坐标（客户端坐标），
+    直接调用本函数可避免使用屏幕坐标查找遮挡前景窗口的问题。
+
+    Args:
+        hwnd: 目标窗口句柄（父窗口）
+        cx, cy: 客户端坐标（相对于 hwnd 客户区左上）
+        debug: 是否输出调试日志
+        find_deep_child: 是否在 hwnd 内根据坐标递归定位最深子控件后再点击
+        verify_window: 是否在点击前校验窗口有效且可接收消息
+        send_mousemove: 是否在按下前发送 WM_MOUSEMOVE（部分UI框架依赖悬浮态）
+
+    Returns:
+        bool: 消息是否成功投递（不保证目标应用必然产生点击效果）
+    """
+    log = _get_logger()
+    if not hwnd or not user32.IsWindow(hwnd):
+        if debug:
+            log.error(f"post_click_client_pos: 窗口句柄无效 hwnd={hwnd}")
+        return False
+
+    if verify_window and not _verify_window_state(hwnd, debug):
+        if debug:
+            log.error(f"post_click_client_pos: 窗口状态不适合接收点击 hwnd={hwnd}")
+        # 仍允许继续尝试，部分窗口即便 IsWindowEnabled 返回假也能处理消息
+        # 这里按严格模式返回 False；若要放宽可改为继续
+        return False
+
+    target = hwnd
+    local_pt = POINT(cx, cy)
+
+    if find_deep_child:
+        # 将父窗口客户端坐标转换为屏幕坐标，再映射到子窗口客户端坐标
+        scr_pt = POINT(cx, cy)
+        if not user32.ClientToScreen(hwnd, ctypes.byref(scr_pt)):
+            if debug:
+                log.warning(f"ClientToScreen 失败: hwnd={hwnd}, pt=({cx},{cy})")
+        # 在父窗口内根据客户端坐标找到可能的子窗口
+        child = user32.ChildWindowFromPointEx(hwnd, POINT(cx, cy),
+                                              CWP_SKIPINVISIBLE | CWP_SKIPDISABLED | CWP_SKIPTRANSPARENT)
+        if child and child != hwnd and user32.IsWindow(child):
+            # 将屏幕坐标转换为子窗口客户端坐标
+            pt_child = POINT(scr_pt.x, scr_pt.y)
+            if not user32.ScreenToClient(child, ctypes.byref(pt_child)):
+                if debug:
+                    log.warning(f"ScreenToClient 到子窗口失败: child={child}, scr=({scr_pt.x},{scr_pt.y})")
+            else:
+                target = child
+                local_pt = pt_child
+                if debug:
+                    info = _get_window_info(child)
+                    log.debug(f"命中子窗口: hwnd={child}, 类='{info.get('class_name','')}', 标题='{info.get('title','')}', pt=({pt_child.x},{pt_child.y})")
+        else:
+            if debug:
+                log.debug("未命中子窗口，直接向父窗口发送")
+
+    lparam = _make_lparam(int(local_pt.x), int(local_pt.y))
+    if debug:
+        info = _get_window_info(target)
+        log.info(f"后台点击(hwnd客户端): hwnd={target}, 类='{info.get('class_name','')}', 标题='{info.get('title','')}', pt=({local_pt.x},{local_pt.y}), lParam=0x{lparam:08x}")
+
+    ok_move = True
+    if send_mousemove:
+        try:
+            ok_move = bool(user32.PostMessageW(target, 0x0200, 0, lparam))  # WM_MOUSEMOVE
+        except Exception:
+            ok_move = False
+
+    ok_down = bool(user32.PostMessageW(target, WM_LBUTTONDOWN, 1, lparam))
+    ok_up = bool(user32.PostMessageW(target, WM_LBUTTONUP, 0, lparam))
+    success = bool(ok_down and ok_up and ok_move)
+    if debug:
+        log.info(f"后台点击投递: move={ok_move}, down={ok_down}, up={ok_up}, success={success}")
+    return success
+
+
+def post_click_in_window_with_config(hwnd: int, cx: int, cy: int, config) -> bool:
+    """基于配置，对指定窗口客户端坐标执行无感点击。"""
+    debug = getattr(config, 'debug_mode', False)
+    verify_window = getattr(config, 'verify_window_before_click', True)
+    # 允许通过配置选择是否深入子控件
+    find_deep_child = getattr(config, 'enhanced_window_finding', True)
+    return post_click_client_pos(hwnd, cx, cy,
+                                 debug=debug,
+                                 find_deep_child=find_deep_child,
+                                 verify_window=verify_window,
+                                 send_mousemove=True)
 
 def _enhanced_window_from_point(sx: int, sy: int, debug: bool = False) -> int:
     """增强的窗口查找算法，尝试多种方法找到最合适的目标窗口。"""

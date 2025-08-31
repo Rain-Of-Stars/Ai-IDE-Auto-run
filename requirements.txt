@@ -3,3 +3,7 @@ PySide6>=6.7.2,<7
 opencv-python-headless>=4.10.0.84,<5
 numpy>=2.1,<3
 mss>=9.0.1
+
+# Windows 窗口级截屏（WGC）相关（可选）
+windows-capture-python>=1.0.0
+winrt-runtime>=2.0.0

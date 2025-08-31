@@ -78,6 +78,26 @@ class AppConfig:
     # 多屏幕轮询时的屏幕切换间隔（毫秒）
     screen_polling_interval_ms: int = 1000
 
+    # === 窗口级截屏（WGC）相关配置 ===
+    # 捕获后端：screen(传统屏幕截取)/window(窗口级)/auto(自动优先窗口，失败回退屏幕)
+    capture_backend: str = "screen"
+    # 目标窗口句柄（0 表示未设置）
+    target_hwnd: int = 0
+    # 目标窗口标题（用于自动查找HWND，可选）
+    target_window_title: str = ""
+    # 标题匹配是否允许部分匹配
+    window_title_partial_match: bool = True
+    # 窗口抓帧最大FPS
+    fps_max: int = 30
+    # 单次抓帧超时（毫秒）
+    capture_timeout_ms: int = 5000
+    # 处理最小化：是否恢复但不激活（不抢占前台）
+    restore_minimized_noactivate: bool = True
+    # 抓帧后是否重新最小化
+    restore_minimized_after_capture: bool = False
+    # Electron/Chromium优化建议开关（仅用于提示，不强制）
+    enable_electron_optimization: bool = True
+
 
 def _default_config_dict() -> Dict[str, Any]:
     cfg = AppConfig()
@@ -151,6 +171,16 @@ def load_config(path: Optional[str] = None) -> AppConfig:
         coordinate_transform_mode=str(data.get("coordinate_transform_mode", "auto")),
         enable_multi_screen_polling=bool(data.get("enable_multi_screen_polling", False)),
         screen_polling_interval_ms=int(data.get("screen_polling_interval_ms", 1000)),
+        # 窗口级截屏（WGC）相关
+        capture_backend=str(data.get("capture_backend", "screen")),
+        target_hwnd=int(data.get("target_hwnd", 0)),
+        target_window_title=str(data.get("target_window_title", "")),
+        window_title_partial_match=bool(data.get("window_title_partial_match", True)),
+        fps_max=int(data.get("fps_max", 30)),
+        capture_timeout_ms=int(data.get("capture_timeout_ms", 5000)),
+        restore_minimized_noactivate=bool(data.get("restore_minimized_noactivate", True)),
+        restore_minimized_after_capture=bool(data.get("restore_minimized_after_capture", False)),
+        enable_electron_optimization=bool(data.get("enable_electron_optimization", True)),
     )
     return cfg
 

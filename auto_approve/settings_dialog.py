@@ -462,6 +462,14 @@ def _parse_scales(text: str) -> Tuple[float, ...]:
 
 
 class SettingsDialog(QtWidgets.QDialog):
+    """设置窗口对话框。
+
+    变更说明：
+    - 新增`saved`信号：点击“保存”时写入配置文件并发出该信号，但不关闭对话框；
+      便于外部（托盘）实时应用新配置，同时保持设置窗口不退出。
+    """
+    # 对外通知“已保存”的信号（携带新配置对象），不触发关闭
+    saved = QtCore.Signal(object)
     def __init__(self, parent=None):
         super().__init__(parent)
         # 窗口参数
@@ -736,6 +744,30 @@ class SettingsDialog(QtWidgets.QDialog):
         self.le_debug_dir = QtWidgets.QLineEdit(self.cfg.debug_image_dir)
         self.cb_enhanced_finding = CustomCheckBox("增强窗口查找"); self.cb_enhanced_finding.setChecked(self.cfg.enhanced_window_finding)
 
+        # —— 新增：窗口捕获（WGC）相关控件
+        # 捕获后端下拉：显示中文标签，但内部保存为英文枚举（screen/window/auto）
+        self.combo_capture_backend = QtWidgets.QComboBox()
+        self.combo_capture_backend.addItem("传统屏幕区域截取", "screen")
+        self.combo_capture_backend.addItem("窗口级截取", "window")
+        self.combo_capture_backend.addItem("自动尝试截取", "auto")
+        # 设置当前值
+        _cur_backend = getattr(self.cfg, 'capture_backend', 'screen')
+        _idx = self.combo_capture_backend.findData(_cur_backend)
+        if _idx >= 0:
+            self.combo_capture_backend.setCurrentIndex(_idx)
+        self.combo_capture_backend.setToolTip("选择截屏实现：传统屏幕区域/窗口级/自动尝试")
+        self.sb_target_hwnd = PlusMinusSpinBox(); self.sb_target_hwnd.setRange(0, 2_147_483_647); self.sb_target_hwnd.setValue(getattr(self.cfg, 'target_hwnd', 0))
+        self.le_window_title = QtWidgets.QLineEdit(getattr(self.cfg, 'target_window_title', "")); self.le_window_title.setPlaceholderText("例如: Visual Studio Code")
+        self.cb_partial_match = CustomCheckBox("允许部分匹配窗口标题"); self.cb_partial_match.setChecked(getattr(self.cfg, 'window_title_partial_match', True))
+        self.sb_fps_max = PlusMinusSpinBox(); self.sb_fps_max.setRange(1, 60); self.sb_fps_max.setValue(getattr(self.cfg, 'fps_max', 30)); self.sb_fps_max.setSuffix(" FPS")
+        self.sb_capture_timeout = PlusMinusSpinBox(); self.sb_capture_timeout.setRange(500, 60000); self.sb_capture_timeout.setValue(getattr(self.cfg, 'capture_timeout_ms', 5000)); self.sb_capture_timeout.setSuffix(" ms")
+        self.cb_restore_minimized = CustomCheckBox("恢复最小化窗口（不激活）"); self.cb_restore_minimized.setChecked(getattr(self.cfg, 'restore_minimized_noactivate', True))
+        self.cb_restore_after_capture = CustomCheckBox("抓帧后重新最小化"); self.cb_restore_after_capture.setChecked(getattr(self.cfg, 'restore_minimized_after_capture', False))
+        self.cb_electron_optimization = CustomCheckBox("Electron/Chromium优化提示"); self.cb_electron_optimization.setChecked(getattr(self.cfg, 'enable_electron_optimization', True))
+        self.btn_find_window = QtWidgets.QPushButton("按标题查找窗口")
+        self.btn_hwnd_picker = QtWidgets.QPushButton("打开HWND获取工具")
+        self.btn_test_capture = QtWidgets.QPushButton("测试窗口捕获")
+
         # ============ 构建页面（右侧堆叠）============
         self.stack = QtWidgets.QStackedWidget()
 
@@ -924,6 +956,29 @@ class SettingsDialog(QtWidgets.QDialog):
         form_debug.addRow(self.cb_enhanced_finding)
 
         # 加入堆叠（注意：新增了 显示器/日志/通知 三个页面，移除了多屏幕页面）
+        # — 窗口捕获 · 配置
+        page_wgc = QtWidgets.QWidget()
+        form_wgc = QtWidgets.QFormLayout(page_wgc)
+        form_wgc.setLabelAlignment(QtCore.Qt.AlignmentFlag.AlignLeft)
+        form_wgc.setContentsMargins(16, 16, 16, 16)
+        form_wgc.setFieldGrowthPolicy(QtWidgets.QFormLayout.FieldsStayAtSizeHint)
+        form_wgc.setFormAlignment(QtCore.Qt.AlignmentFlag.AlignLeft | QtCore.Qt.AlignmentFlag.AlignTop)
+        form_wgc.setHorizontalSpacing(12)
+        form_wgc.setVerticalSpacing(8)
+        form_wgc.addRow("捕获后端", self.combo_capture_backend)
+        form_wgc.addRow("目标窗口HWND", self.sb_target_hwnd)
+        form_wgc.addRow("目标窗口标题", self.le_window_title)
+        form_wgc.addRow(self.cb_partial_match)
+        hb_w = QtWidgets.QHBoxLayout(); hb_w.addWidget(self.btn_find_window); hb_w.addWidget(self.btn_hwnd_picker); hb_w.addWidget(self.btn_test_capture); hb_w.addStretch(1)
+        form_wgc.addRow("", hb_w)
+        sep = QtWidgets.QFrame(); sep.setFrameShape(QtWidgets.QFrame.HLine); sep.setFrameShadow(QtWidgets.QFrame.Sunken)
+        form_wgc.addRow(sep)
+        form_wgc.addRow("最大帧率", self.sb_fps_max)
+        form_wgc.addRow("捕获超时", self.sb_capture_timeout)
+        form_wgc.addRow(self.cb_restore_minimized)
+        form_wgc.addRow(self.cb_restore_after_capture)
+        form_wgc.addRow(self.cb_electron_optimization)
+
         pages = [
             page_general_tpl,    # 0
             page_general_misc,   # 1 扫描与性能
@@ -933,7 +988,8 @@ class SettingsDialog(QtWidgets.QDialog):
             page_match,          # 5
             page_click,          # 6
             page_roi,            # 7
-            page_debug           # 8 (原来的索引9)
+            page_debug,          # 8
+            page_wgc             # 9 窗口捕获
         ]
         for p in pages:
             self.stack.addWidget(p)
@@ -1021,7 +1077,13 @@ class SettingsDialog(QtWidgets.QDialog):
         it_debug_page.setData(0, QtCore.Qt.ItemDataRole.UserRole, 8)  # 更新索引为8
         it_debug.addChild(it_debug_page)
 
-        self.nav.addTopLevelItems([it_general, it_match, it_click, it_roi, it_debug])  # 移除it_multi
+        # 顶级：窗口捕获
+        it_wgc = QtWidgets.QTreeWidgetItem(["窗口捕获"])
+        it_wgc_page = QtWidgets.QTreeWidgetItem(["WGC配置"])
+        it_wgc_page.setData(0, QtCore.Qt.ItemDataRole.UserRole, 9)
+        it_wgc.addChild(it_wgc_page)
+
+        self.nav.addTopLevelItems([it_general, it_match, it_click, it_roi, it_debug, it_wgc])
         self.nav.expandAll()
 
         # ============ 总体布局（左右分栏 + 底部按钮）============
@@ -1062,6 +1124,9 @@ class SettingsDialog(QtWidgets.QDialog):
         self.btn_ok.clicked.connect(self._on_save)
         self.btn_cancel.clicked.connect(self.reject)
         self.nav.currentItemChanged.connect(self._on_nav_changed)
+        self.btn_find_window.clicked.connect(self._on_find_window_by_title)
+        self.btn_hwnd_picker.clicked.connect(self._on_open_hwnd_picker)
+        self.btn_test_capture.clicked.connect(self._on_test_window_capture)
 
         # 列表项双击直接预览：提升操作便捷性
         # 使用 itemDoubleClicked 以获取被双击的具体项，避免多选时歧义
@@ -1346,9 +1411,32 @@ class SettingsDialog(QtWidgets.QDialog):
             coordinate_transform_mode=self.combo_transform_mode.currentText(),
             enable_multi_screen_polling=self.cb_multi_screen_polling.isChecked(),
             screen_polling_interval_ms=self.sb_polling_interval.value(),
+            # 窗口捕获相关
+            capture_backend=(self.combo_capture_backend.currentData() or 'screen'),
+            target_hwnd=self.sb_target_hwnd.value(),
+            target_window_title=self.le_window_title.text(),
+            window_title_partial_match=self.cb_partial_match.isChecked(),
+            fps_max=self.sb_fps_max.value(),
+            capture_timeout_ms=self.sb_capture_timeout.value(),
+            restore_minimized_noactivate=self.cb_restore_minimized.isChecked(),
+            restore_minimized_after_capture=self.cb_restore_after_capture.isChecked(),
+            enable_electron_optimization=self.cb_electron_optimization.isChecked(),
         )
+        # 写入配置文件，但不关闭窗口
         save_config(cfg)
-        self.accept()
+        # 发出“已保存”信号，供外部应用新配置
+        try:
+            self.saved.emit(cfg)
+        except Exception:
+            pass
+        # 给予轻量化反馈（非阻塞，不关闭窗口）
+        QtWidgets.QToolTip.showText(
+            QtGui.QCursor.pos(),
+            "已保存配置",
+            self,
+            self.rect(),
+            1200,
+        )
 
     def _on_nav_changed(self, cur: QtWidgets.QTreeWidgetItem, prev: QtWidgets.QTreeWidgetItem | None):
         """左侧菜单变化时切换到对应页面。"""
@@ -1362,3 +1450,80 @@ class SettingsDialog(QtWidgets.QDialog):
             return
         if isinstance(page_index, int):
             self.stack.setCurrentIndex(page_index)
+
+    # ---------- 新增：窗口捕获辅助 ----------
+
+    def _on_find_window_by_title(self):
+        """根据输入标题查找窗口并回填HWND。"""
+        title = (self.le_window_title.text() or "").strip()
+        if not title:
+            QtWidgets.QMessageBox.information(self, "提示", "请先输入窗口标题")
+            return
+        try:
+            from auto_approve.wgc_capture import find_window_by_title, is_electron_process
+            hwnd = find_window_by_title(title, self.cb_partial_match.isChecked())
+            if hwnd:
+                self.sb_target_hwnd.setValue(int(hwnd))
+                if self.cb_electron_optimization.isChecked() and is_electron_process(hwnd):
+                    QtWidgets.QMessageBox.information(
+                        self, "Electron优化建议",
+                        "检测到Electron/Chromium进程。建议：\n"
+                        "1) 启动参数添加 --disable-features=CalculateNativeWinOcclusion\n"
+                        "2) 对Electron应用启用 backgroundThrottling=false"
+                    )
+            else:
+                QtWidgets.QMessageBox.warning(self, "未找到", "未找到匹配的窗口，请确认标题或尝试部分匹配")
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(self, "错误", f"查找窗口失败: {e}")
+
+    def _on_open_hwnd_picker(self):
+        """打开HWND获取工具并回填配置。"""
+        try:
+            from auto_approve.hwnd_picker import HWNDPickerDialog
+            dlg = HWNDPickerDialog(self)
+            if dlg.exec() == QtWidgets.QDialog.Accepted:
+                hwnd, title = dlg.get_selected_hwnd()
+                if hwnd:
+                    self.sb_target_hwnd.setValue(int(hwnd))
+                    if title:
+                        self.le_window_title.setText(title)
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(self, "错误", f"打开HWND获取工具失败: {e}")
+
+    def _on_test_window_capture(self):
+        """测试当前WGC配置的窗口捕获。"""
+        hwnd = int(self.sb_target_hwnd.value())
+        if hwnd <= 0:
+            QtWidgets.QMessageBox.warning(self, "提示", "请先设置有效的HWND")
+            return
+        try:
+            from auto_approve.wgc_capture import WindowCaptureManager
+            import cv2, time
+            mgr = WindowCaptureManager(
+                target_hwnd=hwnd,
+                fps_max=self.sb_fps_max.value(),
+                timeout_ms=self.sb_capture_timeout.value(),
+                restore_minimized=self.cb_restore_minimized.isChecked(),
+            )
+            img = mgr.capture_frame(restore_after_capture=self.cb_restore_after_capture.isChecked())
+            mgr.cleanup()
+            if img is None:
+                QtWidgets.QMessageBox.warning(self, "捕获失败", "窗口捕获失败，建议增加超时时间或检查窗口状态")
+                return
+            # 预览/保存
+            h, w = img.shape[:2]
+            rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            qimg = QtGui.QImage(rgb.data, w, h, rgb.strides[0], QtGui.QImage.Format_RGB888)
+            pm = QtGui.QPixmap.fromImage(qimg)
+            dlg = ScreenshotPreviewDialog(pm, self)
+            dlg.setWindowTitle("WGC捕获测试结果")
+            if dlg.exec() == QtWidgets.QDialog.Accepted:
+                path = f"wgc_test_capture_{int(time.time())}.png"
+                cv2.imwrite(path, img)
+                QtWidgets.QMessageBox.information(self, "保存成功", f"图片已保存: {path}")
+            else:
+                QtWidgets.QMessageBox.information(self, "成功", f"捕获成功，尺寸: {w}×{h}")
+        except ImportError:
+            QtWidgets.QMessageBox.critical(self, "依赖缺失", "WGC功能需要: pip install windows-capture-python winrt-runtime")
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(self, "错误", f"测试捕获失败: {e}")

@@ -1,0 +1,120 @@
+    """窗口捕获管理器：封装 WGC+PrintWindow，处理最小化不激活恢复。"""
+    def __init__(self, target_hwnd: Optional[int] = None, fps_max: int = 30,
+                 timeout_ms: int = 5000, restore_minimized: bool = True):
+        self.target_hwnd = target_hwnd or 0
+        self.fps_max = max(1, min(int(fps_max), 60))
+        self.timeout_ms = max(500, int(timeout_ms))
+        self.restore_minimized = bool(restore_minimized)
+        self._logger = get_logger()
+
+        self._wgc: Optional[WGCCaptureBackend] = None
+        self._pw: Optional[PrintWindowBackend] = None
+        self._was_minimized = False
+
+        if self.target_hwnd:
+            self._init_backends()
+
+    def _init_backends(self) -> None:
+        """初始化两种后端。"""
+        # WGC 优先
+        if WGC_AVAILABLE:
+            try:
+                self._wgc = WGCCaptureBackend(self.target_hwnd, self.fps_max, self.timeout_ms)
+                if not self._wgc.start():
+                    self._logger.warning("WGC 启动失败，将尝试PrintWindow")
+                    self._wgc = None
+            except Exception as e:
+                self._logger.warning(f"WGC 初始化失败: {e}")
+                self._wgc = None
+        # PrintWindow 兜底
+        try:
+            self._pw = PrintWindowBackend(self.target_hwnd)
+        except Exception as e:
+            self._logger.error(f"PrintWindow 初始化失败: {e}")
+            self._pw = None
+
+    def _handle_minimized(self) -> bool:
+        """如窗口最小化则恢复但不激活。"""
+        if not self.restore_minimized or not self.target_hwnd:
+            return True
+        try:
+            if user32.IsIconic(self.target_hwnd):
+                if user32.ShowWindow(self.target_hwnd, SW_SHOWNOACTIVATE):
+                    self._was_minimized = True
+                    time.sleep(0.1)
+                    return True
+                self._logger.warning("ShowWindow(SW_SHOWNOACTIVATE) 失败")
+                return False
+            return True
+        except Exception as e:
+            self._logger.error(f"处理最小化失败: {e}")
+            return False
+
+    def _re_minimize(self) -> None:
+        """如需，抓帧后重新最小化。"""
+        if self._was_minimized and self.target_hwnd:
+            try:
+                user32.ShowWindow(self.target_hwnd, SW_MINIMIZE)
+            except Exception:
+                pass
+            self._was_minimized = False
+
+    def capture_frame(self, restore_after_capture: bool = False) -> Optional[np.ndarray]:
+        """抓取窗口帧，返回BGR图像。"""
+        if not self.target_hwnd:
+            self._logger.error("未设置目标HWND")
+            return None
+        if not self._handle_minimized():
+            return None
+
+        img: Optional[np.ndarray] = None
+        # WGC 优先
+        if self._wgc:
+            img = self._wgc.capture_frame()
+        # 回退 PrintWindow
+        if img is None and self._pw:
+            img = self._pw.capture_frame()
+
+        if restore_after_capture:
+            self._re_minimize()
+        return img
+
+    def set_target_hwnd(self, hwnd: int) -> None:
+        """切换目标窗口。"""
+        if hwnd == self.target_hwnd:
+            return
+        self.cleanup()
+        self.target_hwnd = hwnd or 0
+        if self.target_hwnd:
+            self._init_backends()
+
+    def cleanup(self) -> None:
+        """释放资源。"""
+        if self._wgc:
+            self._wgc.stop()
+        self._wgc = None
+        self._pw = None
+        if self._was_minimized:
+            self._re_minimize()
+
+    def __del__(self):
+        self.cleanup()
+
+
+def find_window_by_title(title: str, partial_match: bool = True) -> Optional[int]:
+    """根据标题查找窗口HWND。"""
+    found = []
+
+    @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    def enum_proc(hwnd, _lparam):
+        try:
+            if not user32.IsWindowVisible(hwnd):
+                return True
+            length = user32.GetWindowTextLengthW(hwnd)
+            if length <= 0:
+                return True
+            buf = ctypes.create_unicode_buffer(length + 1)
+            user32.GetWindowTextW(hwnd, buf, length + 1)
+            wt = buf.value
+            if partial_match:
+                if title.lower() in wt.lower():

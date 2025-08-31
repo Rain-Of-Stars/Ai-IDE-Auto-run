@@ -18,7 +18,10 @@ from PySide6 import QtCore
 from auto_approve.config_manager import AppConfig, ROI
 from auto_approve.path_utils import get_app_base_dir
 from auto_approve.logger_manager import get_logger
-from auto_approve.win_clicker import post_click_with_config
+from auto_approve.win_clicker import post_click_with_config, post_click_in_window_with_config
+from auto_approve.wgc_capture import WindowCaptureManager, find_window_by_title, is_electron_process
+import ctypes
+from ctypes import wintypes
 
 
 class ScannerWorker(QtCore.QThread):
@@ -61,6 +64,12 @@ class ScannerWorker(QtCore.QThread):
         if self.cfg.save_debug_images:
             os.makedirs(self._debug_dir, exist_ok=True)
 
+        # 窗口捕获相关
+        self._window_capture_manager: WindowCaptureManager | None = None
+        self._current_capture_backend: str = getattr(self.cfg, 'capture_backend', 'screen')
+        self._window_find_retries = 0
+        self._max_window_find_retries = 3
+
     # ---------- 公共控制接口 ----------
 
     def update_config(self, cfg: AppConfig):
@@ -80,32 +89,13 @@ class ScannerWorker(QtCore.QThread):
         self._next_allowed = 0.0
         self._load_templates(force=True)
 
-        # 初始化 mss
-        try:
-            with mss.mss() as sct:
-                while self._running:
-                    t0 = time.monotonic()
-                    try:
-                        score = self._scan_once_and_maybe_click(sct)
-                        # 显示状态信息，包括多屏幕轮询信息
-                        if self.cfg.enable_multi_screen_polling:
-                            status_msg = f"运行中(多屏轮询) | 当前屏幕: {self._current_polling_monitor} | 匹配: {score:.3f}"
-                        else:
-                            status_msg = f"运行中 | 上次匹配: {score:.3f}"
-                        self.sig_status.emit(status_msg)
-                    except Exception as e:
-                        self._logger.exception("扫描异常: %s", e)
-                        self.sig_log.emit(f"扫描异常: {e}")
+        backend = (getattr(self.cfg, 'capture_backend', 'screen') or 'screen').lower()
+        if backend in ('window', 'auto') and self._init_window_capture():
+            self._run_window_loop()
+            return
 
-                    # 控制间隔，避免高占用
-                    dt = (time.monotonic() - t0) * 1000.0
-                    sleep_ms = max(0, int(self.cfg.interval_ms - dt))
-                    if sleep_ms > 0:
-                        time.sleep(sleep_ms / 1000.0)
-        except Exception as e:
-            self._logger.exception("mss 初始化失败: %s", e)
-            self.sig_log.emit(f"mss 初始化失败: {e}")
-            self.sig_status.emit("已停止")
+        # 回退到传统屏幕截取
+        self._run_screen_loop()
 
     # ---------- 私有工具函数 ----------
     
@@ -490,6 +480,191 @@ class ScannerWorker(QtCore.QThread):
                 self.sig_log.emit(f"点击发送失败: ({final_cx},{final_cy})")
             
             # 重置累计
+            self._consecutive = 0
+
+        return float(score)
+
+    # ---------- 新增：窗口捕获路径 ----------
+
+    def _init_window_capture(self) -> bool:
+        """初始化窗口捕获管理器：支持按标题查找，Electron优化提示。"""
+        hwnd = int(getattr(self.cfg, 'target_hwnd', 0) or 0)
+        if hwnd <= 0 and getattr(self.cfg, 'target_window_title', ""):
+            try:
+                hwnd = find_window_by_title(self.cfg.target_window_title, getattr(self.cfg, 'window_title_partial_match', True)) or 0
+                if hwnd and getattr(self.cfg, 'enable_electron_optimization', True) and is_electron_process(hwnd):
+                    self._logger.info("检测到Electron/Chromium进程，建议为进程添加 --disable-features=CalculateNativeWinOcclusion，Electron中关闭 backgroundThrottling")
+            except Exception as e:
+                self._logger.warning(f"按标题查找窗口失败: {e}")
+
+        if hwnd <= 0:
+            if getattr(self.cfg, 'capture_backend', 'screen') == 'window':
+                self._logger.error("窗口捕获后端启用但未配置有效的HWND")
+            return False
+
+        try:
+            self._window_capture_manager = WindowCaptureManager(
+                target_hwnd=hwnd,
+                fps_max=getattr(self.cfg, 'fps_max', 30),
+                timeout_ms=getattr(self.cfg, 'capture_timeout_ms', 5000),
+                restore_minimized=getattr(self.cfg, 'restore_minimized_noactivate', True),
+            )
+            self._logger.info(f"窗口捕获后端已初始化: hwnd={hwnd}")
+            return True
+        except Exception as e:
+            self._logger.error(f"窗口捕获后端初始化失败: {e}")
+            self._window_capture_manager = None
+            return False
+
+    def _run_window_loop(self) -> None:
+        """窗口捕获主循环。"""
+        self._logger.info("启动窗口捕获扫描循环")
+        while self._running:
+            t0 = time.monotonic()
+            try:
+                score = self._scan_window_and_maybe_click()
+                # 显示实际后端（若配置为auto，则标注实际为窗口级）
+                if getattr(self.cfg, 'capture_backend', 'screen') == 'auto':
+                    backend_desc = "自动尝试截取（窗口级）"
+                else:
+                    backend_desc = "窗口级截取"
+                self.sig_status.emit(f"运行中 | 后端: {backend_desc} | 上次匹配: {score:.3f}")
+            except Exception as e:
+                self._logger.exception("窗口扫描异常: %s", e)
+                self.sig_log.emit(f"窗口扫描异常: {e}")
+                # 出错回退到屏幕捕获
+                self._run_screen_loop()
+                return
+            dt = (time.monotonic() - t0) * 1000.0
+            sleep_ms = max(0, int(self.cfg.interval_ms - dt))
+            if sleep_ms > 0:
+                time.sleep(sleep_ms / 1000.0)
+
+    def _run_screen_loop(self) -> None:
+        """屏幕捕获主循环（原有逻辑封装）。"""
+        try:
+            with mss.mss() as sct:
+                while self._running:
+                    t0 = time.monotonic()
+                    try:
+                        score = self._scan_once_and_maybe_click(sct)
+                        # 后端描述：若配置为auto但实际走屏幕，则明确为“自动(屏幕)”
+                        if getattr(self.cfg, 'capture_backend', 'screen') == 'auto':
+                            backend_desc = "自动尝试截取（传统屏幕）"
+                        else:
+                            backend_desc = "传统屏幕区域截取"
+
+                        if self.cfg.enable_multi_screen_polling:
+                            status_msg = f"运行中 | 后端: {backend_desc} | 多屏轮询 | 当前屏幕: {self._current_polling_monitor} | 匹配: {score:.3f}"
+                        else:
+                            status_msg = f"运行中 | 后端: {backend_desc} | 上次匹配: {score:.3f}"
+                        self.sig_status.emit(status_msg)
+                    except Exception as e:
+                        self._logger.exception("屏幕扫描异常: %s", e)
+                        self.sig_log.emit(f"屏幕扫描异常: {e}")
+                    dt = (time.monotonic() - t0) * 1000.0
+                    sleep_ms = max(0, int(self.cfg.interval_ms - dt))
+                    if sleep_ms > 0:
+                        time.sleep(sleep_ms / 1000.0)
+        except Exception as e:
+            self._logger.exception("mss 初始化失败: %s", e)
+            self.sig_log.emit(f"mss 初始化失败: {e}")
+            self.sig_status.emit("已停止")
+
+    def _apply_roi_to_image(self, img: np.ndarray) -> Tuple[np.ndarray, int, int]:
+        """将配置的ROI应用到窗口图像上，返回(裁剪图, roi_left, roi_top)。"""
+        roi: ROI = self.cfg.roi
+        h, w = img.shape[:2]
+        if roi.w > 0 and roi.h > 0:
+            x = max(0, min(int(roi.x), w - 1))
+            y = max(0, min(int(roi.y), h - 1))
+            rw = max(1, min(int(roi.w), w - x))
+            rh = max(1, min(int(roi.h), h - y))
+            return img[y:y+rh, x:x+rw].copy(), x, y
+        return img, 0, 0
+
+    def _get_window_rect(self, hwnd: int) -> Tuple[int, int, int, int]:
+        """读取窗口矩形（屏幕坐标）。"""
+        rect = wintypes.RECT()
+        if ctypes.WinDLL('user32', use_last_error=True).GetWindowRect(hwnd, ctypes.byref(rect)):
+            return rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top
+        return 0, 0, 0, 0
+
+    def _scan_window_and_maybe_click(self) -> float:
+        """窗口捕获一次并可能点击。"""
+        # 模板就绪检查
+        if not self._templates:
+            self._load_templates(force=True)
+            if not self._templates:
+                self.sig_status.emit("模板未就绪")
+                time.sleep(0.5)
+                return 0.0
+
+        if not self._window_capture_manager:
+            # 无管理器则直接回退
+            return 0.0
+
+        img = self._window_capture_manager.capture_frame(
+            restore_after_capture=getattr(self.cfg, 'restore_minimized_after_capture', False)
+        )
+        if img is None:
+            # 允许在auto模式回退到屏幕捕获
+            if getattr(self.cfg, 'capture_backend', 'screen') == 'auto':
+                self._run_screen_loop()
+            return 0.0
+
+        if self.cfg.save_debug_images:
+            self._save_debug_image(img, "window_capture")
+
+        roi_img, roi_l, roi_t = self._apply_roi_to_image(img)
+        if self.cfg.grayscale and roi_img.ndim == 3:
+            roi_img = cv2.cvtColor(roi_img, cv2.COLOR_BGR2GRAY)
+
+        score, loc, wh = self._match_best(roi_img)
+        threshold = max(0.0, min(1.0, float(self.cfg.threshold)))
+        if self.cfg.debug_mode and score > 0.1:
+            self._logger.info(f"窗口匹配: score={score:.3f}, threshold={threshold:.3f}, loc={loc}, size={wh}")
+
+        if score >= threshold:
+            self._consecutive += 1
+        else:
+            self._consecutive = 0
+
+        now = time.monotonic()
+        if self._consecutive >= max(1, self.cfg.min_detections) and now >= self._next_allowed:
+            x, y = loc
+            w, h = wh
+            # 窗口内坐标（客户端坐标，不包含窗口边框/标题栏）
+            wx = roi_l + x + w // 2 + int(self.cfg.click_offset[0])
+            wy = roi_t + y + h // 2 + int(self.cfg.click_offset[1])
+            # 计算屏幕坐标仅用于日志与吐司展示，不用于实际点击
+            hwnd = int(getattr(self._window_capture_manager, 'target_hwnd', 0) or 0)
+            left, top, _, _ = self._get_window_rect(hwnd)
+            sx = left + wx
+            sy = top + wy
+            # 注意：后台点击使用 HWND+客户端坐标投递消息，不使用屏幕坐标查找，避免前景遮挡干扰
+
+            # 调试图
+            if self.cfg.save_debug_images:
+                dbg = roi_img.copy()
+                if dbg.ndim == 2:
+                    dbg = cv2.cvtColor(dbg, cv2.COLOR_GRAY2BGR)
+                cv2.rectangle(dbg, (x, y), (x + w, y + h), (0, 255, 0), 2)
+                cv2.circle(dbg, (x + w // 2 + int(self.cfg.click_offset[0]), y + h // 2 + int(self.cfg.click_offset[1])), 5, (0, 0, 255), -1)
+                self._save_debug_image(dbg, "window_match_result", f"score{score:.3f}")
+
+            if self.cfg.debug_mode:
+                self._logger.info(f"窗口点击(后台投递): hwnd={hwnd}, client=({wx},{wy}), screen=({sx},{sy})")
+
+            # 直接向目标 hwnd 发送 WM_LBUTTONDOWN/UP（不聚焦），不影响前台窗口
+            ok = post_click_in_window_with_config(hwnd, int(wx), int(wy), self.cfg)
+            if ok:
+                self._logger.info("已点击: score=%.3f, pos=(%d,%d)", score, sx, sy)
+                self.sig_hit.emit(score, int(sx), int(sy))
+                self._next_allowed = now + max(0.0, float(self.cfg.cooldown_s))
+            else:
+                self._logger.warning("点击发送失败: pos=(%d,%d)", sx, sy)
+                self.sig_log.emit(f"点击发送失败: ({sx},{sy})")
             self._consecutive = 0
 
         return float(score)
