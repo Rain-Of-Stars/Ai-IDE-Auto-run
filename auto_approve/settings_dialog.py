@@ -881,6 +881,6 @@ class SettingsDialog(QtWidgets.QDialog):
             self.nav.setCurrentItem(child)
             return
         if isinstance(page_index, int):
-        self.stack.setCurrentIndex(page_index)
+            self.stack.setCurrentIndex(page_index)
 
     # ---------- 新增：调度/事件驱动 UI 构建辅助（插入在现有 init UI 逻辑中） ----------
