@@ -8,21 +8,19 @@
 
 3.能收到右下角的任务栏中后台运行
 
-4.用户决定能否开启log日志功能，如果开启log日志，需要将log日志输出到log.txt文件中，log日志包含时间
+4.可以保存配置，通过json文件保存配置
 
-<img width="862" height="592" alt="image" src="https://github.com/user-attachments/assets/6c25b4a1-1935-44a3-be84-17ffe1001b95" />
-
-
-5.可以保存配置，通过json文件保存配置
-
-6.用户可截图要无感点击的区域，作为检测目标自行添加（建议使用前先针对不同屏幕进行截图，提高匹配度降低误触，检测失败可先排查这里）
+5.用户可截图要无感点击的区域，作为检测目标自行添加（建议使用前先针对不同屏幕进行截图，提高匹配度降低误触，检测失败可先排查这里）
 
 <img width="862" height="592" alt="image" src="https://github.com/user-attachments/assets/b4f1a22f-a436-4f7b-85b8-a011bc814ed2" />
+
+6.用户决定能否开启log日志功能，如果开启log日志，需要将log日志输出到log.txt文件中，log日志包含时间
+
+<img width="862" height="592" alt="image" src="https://github.com/user-attachments/assets/6c25b4a1-1935-44a3-be84-17ffe1001b95" />
 
 7.多屏幕支持
 
 <img width="862" height="592" alt="image" src="https://github.com/user-attachments/assets/1d551324-2cde-4e72-b9de-983171f1b217" />
-
 
 8.通知提示
 
