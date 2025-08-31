@@ -7,6 +7,7 @@ from __future__ import annotations
 import os
 from typing import Tuple, List
 
+import mss
 from PySide6 import QtWidgets, QtCore, QtGui
 
 from auto_approve.config_manager import AppConfig, ROI, save_config, load_config
@@ -416,6 +417,43 @@ class SettingsDialog(QtWidgets.QDialog):
 
         # 基本与性能
         self.sb_monitor = QtWidgets.QSpinBox(); self.sb_monitor.setRange(1, 16); self.sb_monitor.setValue(self.cfg.monitor_index); self.sb_monitor.setToolTip("mss监视器索引，1为主屏")
+        
+        # 屏幕列表表格
+        self.screen_table = QtWidgets.QTableWidget()
+        self.screen_table.setColumnCount(6)
+        self.screen_table.setHorizontalHeaderLabels([
+            "屏幕编号", "分辨率", "位置 (X, Y)", "尺寸 (宽×高)", "是否主屏", "状态"
+        ])
+        self.screen_table.setAlternatingRowColors(True)
+        self.screen_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self.screen_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self.screen_table.setMaximumHeight(200)
+        
+        # 设置列宽
+        header = self.screen_table.horizontalHeader()
+        header.setStretchLastSection(True)
+        header.setSectionResizeMode(0, QtWidgets.QHeaderView.Fixed)
+        header.setSectionResizeMode(1, QtWidgets.QHeaderView.Fixed)
+        header.setSectionResizeMode(2, QtWidgets.QHeaderView.Fixed)
+        header.setSectionResizeMode(3, QtWidgets.QHeaderView.Fixed)
+        header.setSectionResizeMode(4, QtWidgets.QHeaderView.Fixed)
+        
+        self.screen_table.setColumnWidth(0, 80)   # 屏幕编号
+        self.screen_table.setColumnWidth(1, 120)  # 分辨率
+        self.screen_table.setColumnWidth(2, 120)  # 位置
+        self.screen_table.setColumnWidth(3, 120)  # 尺寸
+        self.screen_table.setColumnWidth(4, 80)   # 是否主屏
+        
+        # 去除表格项的虚线焦点框
+        self.screen_table.setItemDelegate(NoFocusDelegate(self.screen_table))
+        
+        # 屏幕信息标签
+        self.screen_info_label = QtWidgets.QLabel()
+        self.screen_info_label.setStyleSheet("color: #666; font-size: 12px;")
+        
+        # 刷新按钮
+        self.btn_refresh_screens = QtWidgets.QPushButton("刷新屏幕列表")
+        self.btn_refresh_screens.setIcon(self.style().standardIcon(QtWidgets.QStyle.SP_BrowserReload))
         self.sb_interval = QtWidgets.QSpinBox(); self.sb_interval.setRange(100, 10000); self.sb_interval.setSingleStep(50); self.sb_interval.setSuffix(" ms"); self.sb_interval.setValue(self.cfg.interval_ms); self.sb_interval.setToolTip("扫描间隔越大越省电")
         self.sb_min_det = QtWidgets.QSpinBox(); self.sb_min_det.setRange(1, 10); self.sb_min_det.setValue(self.cfg.min_detections)
         self.cb_auto_start = CustomCheckBox("启动后自动开始扫描"); self.cb_auto_start.setChecked(self.cfg.auto_start_scan)
@@ -491,10 +529,32 @@ class SettingsDialog(QtWidgets.QDialog):
 
         # — 常规 · 显示器设置（单独页）
         page_display = QtWidgets.QWidget()
-        form_display = QtWidgets.QFormLayout(page_display)
+        vbox_display = QtWidgets.QVBoxLayout(page_display)
+        vbox_display.setContentsMargins(16, 16, 16, 16)
+        
+        # 显示器索引设置
+        form_display = QtWidgets.QFormLayout()
         form_display.setLabelAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
-        form_display.setContentsMargins(16, 16, 16, 16)
         form_display.addRow("显示器索引", self.sb_monitor)
+        vbox_display.addLayout(form_display)
+        
+        # 屏幕列表标题和刷新按钮
+        screen_header = QtWidgets.QHBoxLayout()
+        screen_title = QtWidgets.QLabel("系统检测到的屏幕列表")
+        screen_title.setProperty("subtitle", True)
+        screen_header.addWidget(screen_title)
+        screen_header.addStretch()
+        screen_header.addWidget(self.btn_refresh_screens)
+        vbox_display.addLayout(screen_header)
+        
+        # 屏幕列表表格
+        vbox_display.addWidget(self.screen_table)
+        
+        # 屏幕信息标签
+        vbox_display.addWidget(self.screen_info_label)
+        
+        # 添加弹性空间
+        vbox_display.addStretch()
 
         # — 常规 · 日志（单独页）
         page_log = QtWidgets.QWidget()
@@ -680,6 +740,8 @@ class SettingsDialog(QtWidgets.QDialog):
         self.btn_del_tpl.clicked.connect(self._on_remove_selected)
         self.btn_clear_tpl.clicked.connect(self._on_clear_templates)
         self.btn_roi_reset.clicked.connect(self._on_roi_reset)
+        self.btn_refresh_screens.clicked.connect(self._on_refresh_screens)
+        self.screen_table.itemSelectionChanged.connect(self._on_screen_selection_changed)
         self.btn_ok.clicked.connect(self._on_save)
         self.btn_cancel.clicked.connect(self.reject)
         self.nav.currentItemChanged.connect(self._on_nav_changed)
@@ -687,6 +749,9 @@ class SettingsDialog(QtWidgets.QDialog):
         # 列表项双击直接预览：提升操作便捷性
         # 使用 itemDoubleClicked 以获取被双击的具体项，避免多选时歧义
         self.list_templates.itemDoubleClicked.connect(self._on_preview_template_by_item)
+        
+        # 初始化屏幕信息
+        self._load_screen_info()
 
         # 默认选择第一个子项
         self.nav.setCurrentItem(it_general_tpl)
@@ -843,6 +908,77 @@ class SettingsDialog(QtWidgets.QDialog):
         self.sb_roi_y.setValue(0)
         self.sb_roi_w.setValue(0)
         self.sb_roi_h.setValue(0)
+
+    def _load_screen_info(self):
+        """加载屏幕信息到表格中"""
+        try:
+            with mss.mss() as sct:
+                monitors = sct.monitors
+                
+            # 清空表格
+            self.screen_table.setRowCount(0)
+            
+            # 添加屏幕信息
+            for i, monitor in enumerate(monitors):
+                if i == 0:  # 跳过第一个（全屏幕）
+                    continue
+                    
+                row = self.screen_table.rowCount()
+                self.screen_table.insertRow(row)
+                
+                # 屏幕编号
+                self.screen_table.setItem(row, 0, QtWidgets.QTableWidgetItem(str(i)))
+                
+                # 分辨率
+                width = monitor['width']
+                height = monitor['height']
+                resolution = f"{width}×{height}"
+                self.screen_table.setItem(row, 1, QtWidgets.QTableWidgetItem(resolution))
+                
+                # 位置
+                left = monitor['left']
+                top = monitor['top']
+                position = f"({left}, {top})"
+                self.screen_table.setItem(row, 2, QtWidgets.QTableWidgetItem(position))
+                
+                # 尺寸
+                size = f"{width}×{height}"
+                self.screen_table.setItem(row, 3, QtWidgets.QTableWidgetItem(size))
+                
+                # 是否主屏（第一个显示器通常是主屏）
+                is_primary = "是" if i == 1 else "否"
+                self.screen_table.setItem(row, 4, QtWidgets.QTableWidgetItem(is_primary))
+                
+                # 状态
+                status = "活动"
+                self.screen_table.setItem(row, 5, QtWidgets.QTableWidgetItem(status))
+            
+            # 更新信息标签
+            total_screens = len(monitors) - 1  # 减去全屏幕
+            if total_screens > 0:
+                total_width = sum(m['width'] for m in monitors[1:])
+                total_height = max(m['height'] for m in monitors[1:])
+                self.screen_info_label.setText(
+                    f"共检测到 {total_screens} 个屏幕，总桌面尺寸: {total_width}×{total_height} 像素"
+                )
+            else:
+                self.screen_info_label.setText("未检测到屏幕")
+                
+        except Exception as e:
+            QtWidgets.QMessageBox.warning(self, "错误", f"加载屏幕信息失败：{str(e)}")
+            self.screen_info_label.setText("加载屏幕信息失败")
+    
+    def _on_refresh_screens(self):
+        """刷新屏幕列表"""
+        self._load_screen_info()
+    
+    def _on_screen_selection_changed(self):
+        """屏幕选择变化时更新显示器索引"""
+        current_row = self.screen_table.currentRow()
+        if current_row >= 0:
+            # 表格行号对应屏幕编号（从1开始）
+            screen_index = current_row + 1
+            self.sb_monitor.setValue(screen_index)
 
     def _on_save(self):
         try:

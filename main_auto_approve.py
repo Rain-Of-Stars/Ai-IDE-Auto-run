@@ -35,7 +35,6 @@ from auto_approve.logger_manager import enable_file_logging, get_logger
 # 延迟导入扫描线程，避免应用启动即导入 numpy/cv2 产生控制台告警
 # from scanner_worker import ScannerWorker
 from auto_approve.settings_dialog import SettingsDialog
-from auto_approve.screen_list_dialog import ScreenListDialog
 
 # 仅在类型检查时导入，避免运行期提前加载 numpy/cv2 等重依赖
 if TYPE_CHECKING:
@@ -102,8 +101,7 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
         self.worker: "ScannerWorker" | None = None
         # 设置对话框单实例引用
         self.settings_dlg: SettingsDialog | None = None
-        # 屏幕列表对话框单实例引用
-        self.screen_list_dlg: ScreenListDialog | None = None
+
 
         # 菜单
         self.menu = QtWidgets.QMenu()
@@ -133,9 +131,7 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
         self.act_settings.triggered.connect(self.open_settings)
         self.menu.addAction(self.act_settings)
         
-        self.act_screen_list = QtGui.QAction("显示屏幕列表")
-        self.act_screen_list.triggered.connect(self.show_screen_list)
-        self.menu.addAction(self.act_screen_list)
+
 
         self.menu.addSeparator()
         self.act_quit = QtGui.QAction("退出")
@@ -279,17 +275,7 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
         """设置窗口关闭后回调：清理单实例引用。"""
         self.settings_dlg = None
 
-    def _on_screen_list_finished(self, _result: int):
-        """屏幕列表对话框关闭后回调：记录选择并清理引用。"""
-        try:
-            if self.screen_list_dlg is not None:
-                try:
-                    sel = self.screen_list_dlg.get_selected_screen()
-                    self.logger.info(f"屏幕列表已关闭，最后选择的屏幕: {sel}")
-                except Exception:
-                    pass
-        finally:
-            self.screen_list_dlg = None
+
 
     def _focus_window(self, w: QtWidgets.QWidget):
         """将窗口置于前台并获取焦点（尽量兼容Windows前台限制）。"""
@@ -308,26 +294,7 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
             # 兜底：即便失败也不影响功能
             pass
     
-    def show_screen_list(self):
-        """显示屏幕列表对话框：单实例，已存在则聚焦置前。"""
-        # 若已有窗口（无论是否已显示），则仅聚焦
-        if self.screen_list_dlg is not None:
-            self._focus_window(self.screen_list_dlg)
-            return
 
-        try:
-            # 非模态显示；关闭即释放
-            self.screen_list_dlg = ScreenListDialog()
-            self.screen_list_dlg.setAttribute(QtCore.Qt.WA_DeleteOnClose, True)
-            self.screen_list_dlg.finished.connect(self._on_screen_list_finished)
-            self.screen_list_dlg.show()
-            self._focus_window(self.screen_list_dlg)
-        except Exception as e:
-            self.logger.error(f"显示屏幕列表时发生错误: {e}")
-            QtWidgets.QMessageBox.warning(
-                None, "错误",
-                f"显示屏幕列表时发生错误：\n{str(e)}"
-            )
 
     def quit(self):
         self.stop_scanning()
