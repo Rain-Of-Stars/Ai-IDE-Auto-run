@@ -28,8 +28,6 @@
 <img width="394" height="124" alt="image" src="https://github.com/user-attachments/assets/ba4205e1-b887-4b09-a61f-c1f0a39565cc" />
 
 
-
-
 ## 🌟 主要特性
 
 ### 核心功能
@@ -65,12 +63,6 @@ mss>=9.0.1
    ```bash
    pip install -r requirements.txt
    ```
-3. 运行主程序（推荐PowerShell）：
-   ```powershell
-   # 一键UTF-8并运行（使用指定conda环境）
-   ./scripts/run_app.ps1
-   ```
-   - 如未找到 `C:/Users/wcx/.conda/envs/use/python.exe`，脚本将自动回退到 `python`（使用当前PATH中的解释器）。
 
 ## 🚀 快速开始
 
