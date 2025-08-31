@@ -60,6 +60,105 @@ class CustomCheckBox(QtWidgets.QCheckBox):
             
             painter.end()
 
+
+class PlusMinusSpinBox(QtWidgets.QSpinBox):
+    """带“+/-”按钮的SpinBox：
+    - 隐藏系统默认上下按钮，叠加两个QToolButton来执行 stepUp/stepDown；
+    - 通过右侧内边距与自适应布局，保证点击区域足够大，解决“点击不到”。
+    """
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        # 隐藏默认的上下箭头按钮
+        self.setButtonSymbols(QtWidgets.QAbstractSpinBox.ButtonSymbols.NoButtons)
+        # 给输入区右侧留出空间
+        self.setStyleSheet("QAbstractSpinBox{ padding-right: 28px; }")
+
+        # 上/下两个工具按钮
+        self._btn_plus = QtWidgets.QToolButton(self)
+        self._btn_plus.setText("+")
+        self._btn_plus.setCursor(QtCore.Qt.PointingHandCursor)
+        self._btn_plus.setAutoRepeat(True)
+        self._btn_plus.setAutoRepeatDelay(250)
+        self._btn_plus.setAutoRepeatInterval(60)
+        self._btn_plus.clicked.connect(self.stepUp)
+
+        self._btn_minus = QtWidgets.QToolButton(self)
+        self._btn_minus.setText("-")
+        self._btn_minus.setCursor(QtCore.Qt.PointingHandCursor)
+        self._btn_minus.setAutoRepeat(True)
+        self._btn_minus.setAutoRepeatDelay(250)
+        self._btn_minus.setAutoRepeatInterval(60)
+        self._btn_minus.clicked.connect(self.stepDown)
+
+        # 统一按钮样式（与整体暗色风格一致）
+        btn_style = (
+            "QToolButton { background-color: #3C3F44; border: 1px solid #4A4D52;"
+            " border-radius: 4px; padding: 0px; color: #E0E0E0; }"
+            "QToolButton:hover { background-color: #4A4D52; border-color: #5A5D62; }"
+            "QToolButton:pressed { background-color: #2F80ED; border: 1px solid #4A9EFF; color: white; }"
+            "QToolButton:disabled { background-color: #2B2D31; border: 1px solid #3C3F44; color: #666; }"
+        )
+        self._btn_plus.setStyleSheet(btn_style)
+        self._btn_minus.setStyleSheet(btn_style)
+
+        # 工具按钮不抢占焦点，便于键盘输入
+        self._btn_plus.setFocusPolicy(QtCore.Qt.NoFocus)
+        self._btn_minus.setFocusPolicy(QtCore.Qt.NoFocus)
+
+    def resizeEvent(self, e: QtGui.QResizeEvent) -> None:
+        super().resizeEvent(e)
+        # 动态定位两个按钮到右侧，垂直上下排列
+        w = 26  # 按钮宽度
+        h = max(16, (self.height() - 2) // 2)  # 单个按钮高度
+        x = self.width() - w - 1
+        self._btn_plus.setGeometry(x, 1, w, h)
+        self._btn_minus.setGeometry(x, 1 + h, w, max(16, self.height() - 2 - h))
+
+
+class PlusMinusDoubleSpinBox(QtWidgets.QDoubleSpinBox):
+    """带“+/-”按钮的DoubleSpinBox，逻辑同上。"""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setButtonSymbols(QtWidgets.QAbstractSpinBox.ButtonSymbols.NoButtons)
+        self.setStyleSheet("QAbstractSpinBox{ padding-right: 28px; }")
+
+        self._btn_plus = QtWidgets.QToolButton(self)
+        self._btn_plus.setText("+")
+        self._btn_plus.setCursor(QtCore.Qt.PointingHandCursor)
+        self._btn_plus.setAutoRepeat(True)
+        self._btn_plus.setAutoRepeatDelay(250)
+        self._btn_plus.setAutoRepeatInterval(60)
+        self._btn_plus.clicked.connect(self.stepUp)
+
+        self._btn_minus = QtWidgets.QToolButton(self)
+        self._btn_minus.setText("-")
+        self._btn_minus.setCursor(QtCore.Qt.PointingHandCursor)
+        self._btn_minus.setAutoRepeat(True)
+        self._btn_minus.setAutoRepeatDelay(250)
+        self._btn_minus.setAutoRepeatInterval(60)
+        self._btn_minus.clicked.connect(self.stepDown)
+
+        btn_style = (
+            "QToolButton { background-color: #3C3F44; border: 1px solid #4A4D52;"
+            " border-radius: 4px; padding: 0px; color: #E0E0E0; }"
+            "QToolButton:hover { background-color: #4A4D52; border-color: #5A5D62; }"
+            "QToolButton:pressed { background-color: #2F80ED; border: 1px solid #4A9EFF; color: white; }"
+            "QToolButton:disabled { background-color: #2B2D31; border: 1px solid #3C3F44; color: #666; }"
+        )
+        self._btn_plus.setStyleSheet(btn_style)
+        self._btn_minus.setStyleSheet(btn_style)
+
+        self._btn_plus.setFocusPolicy(QtCore.Qt.NoFocus)
+        self._btn_minus.setFocusPolicy(QtCore.Qt.NoFocus)
+
+    def resizeEvent(self, e: QtGui.QResizeEvent) -> None:
+        super().resizeEvent(e)
+        w = 26
+        h = max(16, (self.height() - 2) // 2)
+        x = self.width() - w - 1
+        self._btn_plus.setGeometry(x, 1, w, h)
+        self._btn_minus.setGeometry(x, 1 + h, w, max(16, self.height() - 2 - h))
+
 class ImagePreviewDialog(QtWidgets.QDialog):
     """简单的图片预览对话框，随窗口大小自适应缩放。"""
     def __init__(self, pixmap: QtGui.QPixmap, path: str, parent=None):
@@ -547,7 +646,7 @@ class SettingsDialog(QtWidgets.QDialog):
             btn.setStyleSheet(button_style)
 
         # 基本与性能
-        self.sb_monitor = QtWidgets.QSpinBox(); self.sb_monitor.setRange(1, 16); self.sb_monitor.setValue(self.cfg.monitor_index); self.sb_monitor.setToolTip("mss监视器索引，1为主屏")
+        self.sb_monitor = PlusMinusSpinBox(); self.sb_monitor.setRange(1, 16); self.sb_monitor.setValue(self.cfg.monitor_index); self.sb_monitor.setToolTip("mss监视器索引，1为主屏")
         
         # 屏幕列表表格
         self.screen_table = QtWidgets.QTableWidget()
@@ -594,14 +693,14 @@ class SettingsDialog(QtWidgets.QDialog):
         # 刷新按钮
         self.btn_refresh_screens = QtWidgets.QPushButton("刷新屏幕列表")
         self.btn_refresh_screens.setIcon(self.style().standardIcon(QtWidgets.QStyle.SP_BrowserReload))
-        self.sb_interval = QtWidgets.QSpinBox(); self.sb_interval.setRange(100, 10000); self.sb_interval.setSingleStep(50); self.sb_interval.setSuffix(" ms"); self.sb_interval.setValue(self.cfg.interval_ms); self.sb_interval.setToolTip("扫描间隔越大越省电")
-        self.sb_min_det = QtWidgets.QSpinBox(); self.sb_min_det.setRange(1, 10); self.sb_min_det.setValue(self.cfg.min_detections)
+        self.sb_interval = PlusMinusSpinBox(); self.sb_interval.setRange(100, 10000); self.sb_interval.setSingleStep(50); self.sb_interval.setSuffix(" ms"); self.sb_interval.setValue(self.cfg.interval_ms); self.sb_interval.setToolTip("扫描间隔越大越省电")
+        self.sb_min_det = PlusMinusSpinBox(); self.sb_min_det.setRange(1, 10); self.sb_min_det.setValue(self.cfg.min_detections)
         self.cb_auto_start = CustomCheckBox("启动后自动开始扫描"); self.cb_auto_start.setChecked(self.cfg.auto_start_scan)
         self.cb_logging = CustomCheckBox("启用日志到 log.txt"); self.cb_logging.setChecked(self.cfg.enable_logging)
 
         # 匹配参数
-        self.ds_threshold = QtWidgets.QDoubleSpinBox(); self.ds_threshold.setRange(0.00, 1.00); self.ds_threshold.setSingleStep(0.01); self.ds_threshold.setDecimals(2); self.ds_threshold.setValue(self.cfg.threshold); self.ds_threshold.setToolTip("越大越严格，建议0.85~0.95")
-        self.ds_cooldown = QtWidgets.QDoubleSpinBox(); self.ds_cooldown.setRange(0.0, 60.0); self.ds_cooldown.setSingleStep(0.5); self.ds_cooldown.setSuffix(" s"); self.ds_cooldown.setValue(self.cfg.cooldown_s); self.ds_cooldown.setToolTip("命中后冷却避免重复点击")
+        self.ds_threshold = PlusMinusDoubleSpinBox(); self.ds_threshold.setRange(0.00, 1.00); self.ds_threshold.setSingleStep(0.01); self.ds_threshold.setDecimals(2); self.ds_threshold.setValue(self.cfg.threshold); self.ds_threshold.setToolTip("越大越严格，建议0.85~0.95")
+        self.ds_cooldown = PlusMinusDoubleSpinBox(); self.ds_cooldown.setRange(0.0, 60.0); self.ds_cooldown.setSingleStep(0.5); self.ds_cooldown.setSuffix(" s"); self.ds_cooldown.setValue(self.cfg.cooldown_s); self.ds_cooldown.setToolTip("命中后冷却避免重复点击")
         self.cb_gray = CustomCheckBox("灰度匹配（更省电）"); self.cb_gray.setChecked(self.cfg.grayscale)
         self.cb_multiscale = CustomCheckBox("多尺度匹配"); self.cb_multiscale.setChecked(self.cfg.multi_scale)
         self.le_scales = QtWidgets.QLineEdit(",".join(f"{v:g}" for v in self.cfg.scales))
@@ -622,13 +721,13 @@ class SettingsDialog(QtWidgets.QDialog):
         # 多屏幕
         self.cb_multi_screen_polling = CustomCheckBox("启用多屏幕轮询搜索"); self.cb_multi_screen_polling.setChecked(self.cfg.enable_multi_screen_polling)
         self.cb_multi_screen_polling.setToolTip("在所有屏幕上轮询搜索目标，适用于多屏幕环境")
-        self.sb_polling_interval = QtWidgets.QSpinBox(); self.sb_polling_interval.setRange(500, 5000); self.sb_polling_interval.setSingleStep(100); self.sb_polling_interval.setSuffix(" ms"); self.sb_polling_interval.setValue(self.cfg.screen_polling_interval_ms)
+        self.sb_polling_interval = PlusMinusSpinBox(); self.sb_polling_interval.setRange(500, 5000); self.sb_polling_interval.setSingleStep(100); self.sb_polling_interval.setSuffix(" ms"); self.sb_polling_interval.setValue(self.cfg.screen_polling_interval_ms)
 
         # ROI 编辑
-        self.sb_roi_x = QtWidgets.QSpinBox(); self.sb_roi_x.setRange(0, 99999); self.sb_roi_x.setValue(self.cfg.roi.x)
-        self.sb_roi_y = QtWidgets.QSpinBox(); self.sb_roi_y.setRange(0, 99999); self.sb_roi_y.setValue(self.cfg.roi.y)
-        self.sb_roi_w = QtWidgets.QSpinBox(); self.sb_roi_w.setRange(0, 99999); self.sb_roi_w.setValue(self.cfg.roi.w)
-        self.sb_roi_h = QtWidgets.QSpinBox(); self.sb_roi_h.setRange(0, 99999); self.sb_roi_h.setValue(self.cfg.roi.h)
+        self.sb_roi_x = PlusMinusSpinBox(); self.sb_roi_x.setRange(0, 99999); self.sb_roi_x.setValue(self.cfg.roi.x)
+        self.sb_roi_y = PlusMinusSpinBox(); self.sb_roi_y.setRange(0, 99999); self.sb_roi_y.setValue(self.cfg.roi.y)
+        self.sb_roi_w = PlusMinusSpinBox(); self.sb_roi_w.setRange(0, 99999); self.sb_roi_w.setValue(self.cfg.roi.w)
+        self.sb_roi_h = PlusMinusSpinBox(); self.sb_roi_h.setRange(0, 99999); self.sb_roi_h.setValue(self.cfg.roi.h)
         self.btn_roi_reset = QtWidgets.QPushButton("重置为整屏")
 
         # 调试
