@@ -646,6 +646,10 @@ class SettingsDialog(QtWidgets.QDialog):
         self.btn_cancel.clicked.connect(self.reject)
         self.nav.currentItemChanged.connect(self._on_nav_changed)
 
+        # 列表项双击直接预览：提升操作便捷性
+        # 使用 itemDoubleClicked 以获取被双击的具体项，避免多选时歧义
+        self.list_templates.itemDoubleClicked.connect(self._on_preview_template_by_item)
+
         # 默认选择第一个子项
         self.nav.setCurrentItem(it_general_tpl)
 
@@ -716,6 +720,20 @@ class SettingsDialog(QtWidgets.QDialog):
         if not item:
             QtWidgets.QMessageBox.information(self, "提示", "请先在列表中选择一张图片")
             return
+        self._preview_path_from_item(item)
+
+    def _on_preview_template_by_item(self, item: QtWidgets.QListWidgetItem):
+        """响应列表项双击事件，直接预览对应图片。
+
+        参数
+        - item: 被双击的 `QListWidgetItem` 对象
+        """
+        if not item:
+            return
+        self._preview_path_from_item(item)
+
+    def _preview_path_from_item(self, item: QtWidgets.QListWidgetItem):
+        """从列表项中解析路径并打开预览对话框。"""
         path = self._resolve_template_path(item.text())
         pm = QtGui.QPixmap(path)
         if pm.isNull():
