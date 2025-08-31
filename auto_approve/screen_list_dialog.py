@@ -63,21 +63,30 @@ class ScreenListDialog(QtWidgets.QDialog):
         self.table.setAlternatingRowColors(True)
         self.table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self.table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self.table.setShowGrid(True)
+        self.table.setGridStyle(QtCore.Qt.SolidLine)
         
-        # 设置列宽
+        # 设置列宽 - 更合理的分配
         header = self.table.horizontalHeader()
+        header.setDefaultAlignment(QtCore.Qt.AlignCenter)  # 表头居中对齐
         header.setStretchLastSection(True)
         header.setSectionResizeMode(0, QtWidgets.QHeaderView.Fixed)
         header.setSectionResizeMode(1, QtWidgets.QHeaderView.Fixed)
         header.setSectionResizeMode(2, QtWidgets.QHeaderView.Fixed)
         header.setSectionResizeMode(3, QtWidgets.QHeaderView.Fixed)
         header.setSectionResizeMode(4, QtWidgets.QHeaderView.Fixed)
+        header.setSectionResizeMode(5, QtWidgets.QHeaderView.Stretch)  # 状态列自适应
         
-        self.table.setColumnWidth(0, 80)   # 屏幕编号
-        self.table.setColumnWidth(1, 120)  # 分辨率
-        self.table.setColumnWidth(2, 120)  # 位置
-        self.table.setColumnWidth(3, 120)  # 尺寸
-        self.table.setColumnWidth(4, 80)   # 是否主屏
+        self.table.setColumnWidth(0, 70)   # 屏幕编号 - 稍微缩小
+        self.table.setColumnWidth(1, 110)  # 分辨率 - 稍微缩小
+        self.table.setColumnWidth(2, 110)  # 位置 - 稍微缩小
+        self.table.setColumnWidth(3, 110)  # 尺寸 - 稍微缩小
+        self.table.setColumnWidth(4, 75)   # 是否主屏 - 稍微缩小
+        
+        # 设置垂直表头
+        vertical_header = self.table.verticalHeader()
+        vertical_header.setDefaultSectionSize(28)  # 行高
+        vertical_header.setVisible(False)  # 隐藏行号
         
         layout.addWidget(self.table)
         
@@ -88,6 +97,8 @@ class ScreenListDialog(QtWidgets.QDialog):
         
         # 按钮区域
         button_layout = QtWidgets.QHBoxLayout()
+        button_layout.setSpacing(8)  # 设置按钮间距
+        button_layout.setContentsMargins(16, 12, 16, 12)  # 设置布局边距
         
         # 刷新按钮
         refresh_btn = QtWidgets.QPushButton("刷新")

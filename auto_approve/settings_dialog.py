@@ -370,6 +370,75 @@ class SettingsDialog(QtWidgets.QDialog):
         self.setModal(True)
         self.resize(860, 560)
         self.setMinimumSize(760, 520)
+        
+        # 设置整体对话框样式
+        self.setStyleSheet("""
+            QDialog {
+                background-color: #2B2D31;
+                color: #E0E0E0;
+            }
+            QGroupBox {
+                background-color: #32343A;
+                border: 1px solid #3C3F44;
+                border-radius: 8px;
+                margin-top: 12px;
+                padding-top: 8px;
+                font-weight: 500;
+                color: #E0E0E0;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 12px;
+                padding: 0 8px 0 8px;
+                background-color: #32343A;
+                color: #4A9EFF;
+                font-weight: 600;
+            }
+            QLabel {
+                color: #E0E0E0;
+                background: transparent;
+            }
+            QSpinBox, QDoubleSpinBox {
+                background-color: #3C3F44;
+                border: 1px solid #4A4D52;
+                border-radius: 4px;
+                padding: 4px 8px;
+                color: #E0E0E0;
+                min-height: 18px;
+            }
+            QSpinBox:focus, QDoubleSpinBox:focus {
+                border: 1px solid #2F80ED;
+            }
+            QCheckBox {
+                color: #E0E0E0;
+                spacing: 8px;
+            }
+            QCheckBox::indicator {
+                width: 16px;
+                height: 16px;
+                border: 1px solid #4A4D52;
+                border-radius: 3px;
+                background-color: #3C3F44;
+            }
+            QCheckBox::indicator:checked {
+                background-color: #2F80ED;
+                border: 1px solid #4A9EFF;
+            }
+            QTableWidget {
+                background-color: #32343A;
+                border: 1px solid #3C3F44;
+                border-radius: 6px;
+                gridline-color: #3C3F44;
+                color: #E0E0E0;
+            }
+            QHeaderView::section {
+                background-color: #3C3F44;
+                border: 1px solid #4A4D52;
+                padding: 6px;
+                color: #E0E0E0;
+                font-weight: 500;
+            }
+        """)
 
         # 载入配置
         self.cfg = load_config()
@@ -381,12 +450,43 @@ class SettingsDialog(QtWidgets.QDialog):
         self.list_templates.setObjectName("tplList")
         self.list_templates.setStyleSheet(
             """
-            /* 仅作用于当前列表，保证高亮明显 */
-            #tplList { selection-background-color: #2F80ED; selection-color: white; }
-            #tplList::item:selected { background-color: #2F80ED; color: white; }
-            #tplList::item:selected:active { background-color: #2F80ED; color: white; }
-            #tplList::item:selected:!active { background-color: #2F80ED; color: white; }
-            #tplList::item:hover { background-color: rgba(47,128,237,0.18); }
+            #tplList {
+                background-color: #2B2D31;
+                border: 1px solid #3C3F44;
+                border-radius: 8px;
+                padding: 6px;
+                selection-background-color: #2F80ED;
+                selection-color: white;
+            }
+            #tplList::item {
+                padding: 10px 12px;
+                margin: 3px 2px;
+                border-radius: 6px;
+                background-color: #32343A;
+                border: 1px solid #3C3F44;
+                color: #E0E0E0;
+            }
+            #tplList::item:selected { 
+                background-color: #2F80ED; 
+                color: white;
+                border: 1px solid #4A9EFF;
+                font-weight: 500;
+            }
+            #tplList::item:selected:active { 
+                background-color: #2F80ED; 
+                color: white;
+                border: 1px solid #4A9EFF;
+            }
+            #tplList::item:selected:!active { 
+                background-color: #2F80ED; 
+                color: white;
+                border: 1px solid #4A9EFF;
+            }
+            #tplList::item:hover { 
+                background-color: rgba(47,128,237,0.15);
+                border: 1px solid rgba(47,128,237,0.5);
+                color: white;
+            }
             """
         )
         self.list_templates.setAlternatingRowColors(True)
@@ -414,6 +514,37 @@ class SettingsDialog(QtWidgets.QDialog):
         self.btn_capture_tpl = QtWidgets.QPushButton("截图添加")
         self.btn_del_tpl = QtWidgets.QPushButton("删除选中")
         self.btn_clear_tpl = QtWidgets.QPushButton("清空列表")
+        
+        # 为按钮设置统一的现代化样式
+        button_style = """
+            QPushButton {
+                background-color: #3C3F44;
+                border: 1px solid #4A4D52;
+                border-radius: 6px;
+                padding: 8px 16px;
+                color: #E0E0E0;
+                font-weight: 500;
+                min-height: 20px;
+            }
+            QPushButton:hover {
+                background-color: #4A4D52;
+                border: 1px solid #5A5D62;
+            }
+            QPushButton:pressed {
+                background-color: #2F80ED;
+                border: 1px solid #4A9EFF;
+                color: white;
+            }
+            QPushButton:disabled {
+                background-color: #2B2D31;
+                border: 1px solid #3C3F44;
+                color: #666;
+            }
+        """
+        
+        for btn in [self.btn_add_tpl, self.btn_preview_tpl, self.btn_capture_tpl, 
+                   self.btn_del_tpl, self.btn_clear_tpl]:
+            btn.setStyleSheet(button_style)
 
         # 基本与性能
         self.sb_monitor = QtWidgets.QSpinBox(); self.sb_monitor.setRange(1, 16); self.sb_monitor.setValue(self.cfg.monitor_index); self.sb_monitor.setToolTip("mss监视器索引，1为主屏")
@@ -428,21 +559,30 @@ class SettingsDialog(QtWidgets.QDialog):
         self.screen_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self.screen_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
         self.screen_table.setMaximumHeight(200)
+        self.screen_table.setShowGrid(True)
+        self.screen_table.setGridStyle(QtCore.Qt.SolidLine)
         
-        # 设置列宽
+        # 设置列宽 - 更合理的分配
         header = self.screen_table.horizontalHeader()
+        header.setDefaultAlignment(QtCore.Qt.AlignCenter)  # 表头居中对齐
         header.setStretchLastSection(True)
         header.setSectionResizeMode(0, QtWidgets.QHeaderView.Fixed)
         header.setSectionResizeMode(1, QtWidgets.QHeaderView.Fixed)
         header.setSectionResizeMode(2, QtWidgets.QHeaderView.Fixed)
         header.setSectionResizeMode(3, QtWidgets.QHeaderView.Fixed)
         header.setSectionResizeMode(4, QtWidgets.QHeaderView.Fixed)
+        header.setSectionResizeMode(5, QtWidgets.QHeaderView.Stretch)  # 状态列自适应
         
-        self.screen_table.setColumnWidth(0, 80)   # 屏幕编号
-        self.screen_table.setColumnWidth(1, 120)  # 分辨率
-        self.screen_table.setColumnWidth(2, 120)  # 位置
-        self.screen_table.setColumnWidth(3, 120)  # 尺寸
-        self.screen_table.setColumnWidth(4, 80)   # 是否主屏
+        self.screen_table.setColumnWidth(0, 70)   # 屏幕编号 - 稍微缩小
+        self.screen_table.setColumnWidth(1, 110)  # 分辨率 - 稍微缩小
+        self.screen_table.setColumnWidth(2, 110)  # 位置 - 稍微缩小
+        self.screen_table.setColumnWidth(3, 110)  # 尺寸 - 稍微缩小
+        self.screen_table.setColumnWidth(4, 75)   # 是否主屏 - 稍微缩小
+        
+        # 设置垂直表头
+        vertical_header = self.screen_table.verticalHeader()
+        vertical_header.setDefaultSectionSize(28)  # 行高
+        vertical_header.setVisible(False)  # 隐藏行号
         
         # 去除表格项的虚线焦点框
         self.screen_table.setItemDelegate(NoFocusDelegate(self.screen_table))
@@ -509,6 +649,8 @@ class SettingsDialog(QtWidgets.QDialog):
         vtpl.addWidget(tpl_head)
         vtpl.addWidget(self.list_templates, 1)
         tpl_btns = QtWidgets.QHBoxLayout()
+        tpl_btns.setSpacing(8)  # 设置按钮间距
+        tpl_btns.setContentsMargins(0, 8, 0, 0)  # 设置布局边距
         tpl_btns.addWidget(self.btn_add_tpl)
         tpl_btns.addWidget(self.btn_preview_tpl)
         tpl_btns.addWidget(self.btn_capture_tpl)
@@ -524,6 +666,10 @@ class SettingsDialog(QtWidgets.QDialog):
         form_misc = QtWidgets.QFormLayout(page_general_misc)
         form_misc.setLabelAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
         form_misc.setContentsMargins(16, 16, 16, 16)
+        form_misc.setFieldGrowthPolicy(QtWidgets.QFormLayout.FieldsStayAtSizeHint)
+        form_misc.setFormAlignment(QtCore.Qt.AlignmentFlag.AlignLeft | QtCore.Qt.AlignmentFlag.AlignTop)
+        form_misc.setHorizontalSpacing(12)
+        form_misc.setVerticalSpacing(8)
         form_misc.addRow("扫描间隔", self.sb_interval)
         form_misc.addRow("最少命中帧", self.sb_min_det)
 
@@ -535,7 +681,16 @@ class SettingsDialog(QtWidgets.QDialog):
         # 显示器索引设置
         form_display = QtWidgets.QFormLayout()
         form_display.setLabelAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
+        form_display.setFieldGrowthPolicy(QtWidgets.QFormLayout.FieldsStayAtSizeHint)
+        form_display.setFormAlignment(QtCore.Qt.AlignmentFlag.AlignLeft | QtCore.Qt.AlignmentFlag.AlignTop)
+        form_display.setHorizontalSpacing(12)
+        form_display.setVerticalSpacing(8)
         form_display.addRow("显示器索引", self.sb_monitor)
+        
+        # 多屏幕轮询设置（移动到显示器设置中）
+        form_display.addRow(self.cb_multi_screen_polling)
+        form_display.addRow("屏幕轮询间隔", self.sb_polling_interval)
+        
         vbox_display.addLayout(form_display)
         
         # 屏幕列表标题和刷新按钮
@@ -561,6 +716,10 @@ class SettingsDialog(QtWidgets.QDialog):
         form_log = QtWidgets.QFormLayout(page_log)
         form_log.setLabelAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
         form_log.setContentsMargins(16, 16, 16, 16)
+        form_log.setFieldGrowthPolicy(QtWidgets.QFormLayout.FieldsStayAtSizeHint)
+        form_log.setFormAlignment(QtCore.Qt.AlignmentFlag.AlignLeft | QtCore.Qt.AlignmentFlag.AlignTop)
+        form_log.setHorizontalSpacing(12)
+        form_log.setVerticalSpacing(8)
         form_log.addRow(self.cb_logging)
 
         # — 常规 · 通知（单独页）
@@ -569,6 +728,10 @@ class SettingsDialog(QtWidgets.QDialog):
         form_notify = QtWidgets.QFormLayout(page_notify)
         form_notify.setLabelAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
         form_notify.setContentsMargins(16, 16, 16, 16)
+        form_notify.setFieldGrowthPolicy(QtWidgets.QFormLayout.FieldsStayAtSizeHint)
+        form_notify.setFormAlignment(QtCore.Qt.AlignmentFlag.AlignLeft | QtCore.Qt.AlignmentFlag.AlignTop)
+        form_notify.setHorizontalSpacing(12)
+        form_notify.setVerticalSpacing(8)
         form_notify.addRow(self.cb_notifications)
 
         # — 匹配 · 参数与尺度
@@ -576,6 +739,10 @@ class SettingsDialog(QtWidgets.QDialog):
         form_match = QtWidgets.QFormLayout(page_match)
         form_match.setLabelAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
         form_match.setContentsMargins(16, 16, 16, 16)
+        form_match.setFieldGrowthPolicy(QtWidgets.QFormLayout.FieldsStayAtSizeHint)
+        form_match.setFormAlignment(QtCore.Qt.AlignmentFlag.AlignLeft | QtCore.Qt.AlignmentFlag.AlignTop)
+        form_match.setHorizontalSpacing(12)
+        form_match.setVerticalSpacing(8)
         form_match.addRow("匹配阈值", self.ds_threshold)
         form_match.addRow("冷却时间", self.ds_cooldown)
         form_match.addRow("灰度匹配", self.cb_gray)
@@ -587,6 +754,10 @@ class SettingsDialog(QtWidgets.QDialog):
         form_click = QtWidgets.QFormLayout(page_click)
         form_click.setLabelAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
         form_click.setContentsMargins(16, 16, 16, 16)
+        form_click.setFieldGrowthPolicy(QtWidgets.QFormLayout.FieldsStayAtSizeHint)
+        form_click.setFormAlignment(QtCore.Qt.AlignmentFlag.AlignLeft | QtCore.Qt.AlignmentFlag.AlignTop)
+        form_click.setHorizontalSpacing(12)
+        form_click.setVerticalSpacing(8)
         form_click.addRow("点击偏移(dx,dy)", self.le_offset)
         form_click.addRow("点击方法", self.combo_click_method)
         form_click.addRow(self.cb_verify_window)
@@ -598,40 +769,62 @@ class SettingsDialog(QtWidgets.QDialog):
         page_roi = QtWidgets.QWidget()
         v_roi = QtWidgets.QVBoxLayout(page_roi)
         v_roi.setContentsMargins(16, 16, 16, 16)
+        
         grid_roi = QtWidgets.QGridLayout()
-        grid_roi.addWidget(QtWidgets.QLabel("X"), 0, 0)
+        grid_roi.setHorizontalSpacing(12)  # 水平间距
+        grid_roi.setVerticalSpacing(8)     # 垂直间距
+        grid_roi.setContentsMargins(12, 12, 12, 12)  # 网格布局边距
+        
+        # 设置标签对齐方式和更清晰的标签文本
+        x_label = QtWidgets.QLabel("X坐标:")
+        x_label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+        y_label = QtWidgets.QLabel("Y坐标:")
+        y_label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+        w_label = QtWidgets.QLabel("宽度:")
+        w_label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+        h_label = QtWidgets.QLabel("高度:")
+        h_label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+        
+        grid_roi.addWidget(x_label, 0, 0)
         grid_roi.addWidget(self.sb_roi_x, 0, 1)
-        grid_roi.addWidget(QtWidgets.QLabel("Y"), 0, 2)
+        grid_roi.addWidget(y_label, 0, 2)
         grid_roi.addWidget(self.sb_roi_y, 0, 3)
-        grid_roi.addWidget(QtWidgets.QLabel("W"), 1, 0)
+        grid_roi.addWidget(w_label, 1, 0)
         grid_roi.addWidget(self.sb_roi_w, 1, 1)
-        grid_roi.addWidget(QtWidgets.QLabel("H"), 1, 2)
+        grid_roi.addWidget(h_label, 1, 2)
         grid_roi.addWidget(self.sb_roi_h, 1, 3)
-        grid_roi.addWidget(self.btn_roi_reset, 0, 4, 2, 1)
-        gb_roi = QtWidgets.QGroupBox("ROI 区域（W/H=0 表示整屏）")
+        
+        # 重置按钮单独放在下方，跨越所有列
+        grid_roi.addWidget(self.btn_roi_reset, 2, 0, 1, 4)
+        
+        # 设置列宽比例，使标签列较窄，输入框列较宽
+        grid_roi.setColumnStretch(0, 0)  # 标签列不拉伸
+        grid_roi.setColumnStretch(1, 1)  # 输入框列拉伸
+        grid_roi.setColumnStretch(2, 0)  # 标签列不拉伸
+        grid_roi.setColumnStretch(3, 1)  # 输入框列拉伸
+        
+        gb_roi = QtWidgets.QGroupBox("ROI 区域（宽度/高度=0 表示整屏）")
         gb_roi.setLayout(grid_roi)
         v_roi.addWidget(gb_roi)
         v_roi.addStretch(1)
 
-        # — 多屏幕 · 轮询
-        page_multi = QtWidgets.QWidget()
-        form_multi = QtWidgets.QFormLayout(page_multi)
-        form_multi.setLabelAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
-        form_multi.setContentsMargins(16, 16, 16, 16)
-        form_multi.addRow(self.cb_multi_screen_polling)
-        form_multi.addRow("屏幕轮询间隔", self.sb_polling_interval)
+        # 多屏幕轮询设置已移动到显示器设置页面中
 
         # — 调试 · 调试与输出
         page_debug = QtWidgets.QWidget()
         form_debug = QtWidgets.QFormLayout(page_debug)
         form_debug.setLabelAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
         form_debug.setContentsMargins(16, 16, 16, 16)
+        form_debug.setFieldGrowthPolicy(QtWidgets.QFormLayout.FieldsStayAtSizeHint)
+        form_debug.setFormAlignment(QtCore.Qt.AlignmentFlag.AlignLeft | QtCore.Qt.AlignmentFlag.AlignTop)
+        form_debug.setHorizontalSpacing(12)
+        form_debug.setVerticalSpacing(8)
         form_debug.addRow(self.cb_debug)
         form_debug.addRow(self.cb_save_debug)
         form_debug.addRow("调试图片目录", self.le_debug_dir)
         form_debug.addRow(self.cb_enhanced_finding)
 
-        # 加入堆叠（注意：新增了 显示器/日志/通知 三个页面）
+        # 加入堆叠（注意：新增了 显示器/日志/通知 三个页面，移除了多屏幕页面）
         pages = [
             page_general_tpl,    # 0
             page_general_misc,   # 1 扫描与性能
@@ -641,8 +834,7 @@ class SettingsDialog(QtWidgets.QDialog):
             page_match,          # 5
             page_click,          # 6
             page_roi,            # 7
-            page_multi,          # 8
-            page_debug           # 9
+            page_debug           # 8 (原来的索引9)
         ]
         for p in pages:
             self.stack.addWidget(p)
@@ -653,16 +845,47 @@ class SettingsDialog(QtWidgets.QDialog):
         self.nav.setObjectName("navTree")
         self.nav.setStyleSheet(
             """
-            #navTree::item:selected { background-color: #2F80ED; color: white; }
-            #navTree::item:selected:active { background-color: #2F80ED; color: white; }
-            #navTree::item:selected:!active { background-color: #2F80ED; color: white; }
-            #navTree::item:hover { background-color: rgba(47,128,237,0.18); }
+            #navTree {
+                padding: 8px;
+                border-radius: 8px;
+                background-color: #2B2D31;
+            }
+            #navTree::item {
+                padding: 8px 12px;
+                margin: 1px 0px;
+                border: none;
+            }
+            #navTree::item:selected { 
+                background-color: #2F80ED; 
+                color: white; 
+                font-weight: 500;
+                border-left: 3px solid #4A9EFF;
+            }
+            #navTree::item:selected:active { 
+                background-color: #2F80ED; 
+                color: white; 
+                border-left: 3px solid #4A9EFF;
+            }
+            #navTree::item:selected:!active { 
+                background-color: #2F80ED; 
+                color: white; 
+                border-left: 3px solid #4A9EFF;
+            }
+            #navTree::item:hover { 
+                background-color: rgba(47,128,237,0.15); 
+                border-left: 2px solid rgba(47,128,237,0.5);
+            }
+            #navTree::branch {
+                margin: 1px;
+            }
             """
         )
         # 去除导航项的虚线焦点框，仅保留高亮
         self.nav.setItemDelegate(NoFocusDelegate(self.nav))
         self.nav.setHeaderHidden(True)
-        self.nav.setMaximumWidth(240)
+        self.nav.setMaximumWidth(220)  # 稍微减小宽度
+        self.nav.setMinimumWidth(200)  # 设置最小宽度
+        self.nav.setIndentation(16)    # 设置缩进距离
 
         # 顶级：常规
         it_general = QtWidgets.QTreeWidgetItem(["常规"])
@@ -697,19 +920,13 @@ class SettingsDialog(QtWidgets.QDialog):
         it_roi_page.setData(0, QtCore.Qt.ItemDataRole.UserRole, 7)
         it_roi.addChild(it_roi_page)
 
-        # 顶级：多屏幕
-        it_multi = QtWidgets.QTreeWidgetItem(["多屏幕"])
-        it_multi_page = QtWidgets.QTreeWidgetItem(["轮询"])
-        it_multi_page.setData(0, QtCore.Qt.ItemDataRole.UserRole, 8)
-        it_multi.addChild(it_multi_page)
-
         # 顶级：调试
         it_debug = QtWidgets.QTreeWidgetItem(["调试"])
         it_debug_page = QtWidgets.QTreeWidgetItem(["调试与输出"])
-        it_debug_page.setData(0, QtCore.Qt.ItemDataRole.UserRole, 9)
+        it_debug_page.setData(0, QtCore.Qt.ItemDataRole.UserRole, 8)  # 更新索引为8
         it_debug.addChild(it_debug_page)
 
-        self.nav.addTopLevelItems([it_general, it_match, it_click, it_roi, it_multi, it_debug])
+        self.nav.addTopLevelItems([it_general, it_match, it_click, it_roi, it_debug])  # 移除it_multi
         self.nav.expandAll()
 
         # ============ 总体布局（左右分栏 + 底部按钮）============
@@ -717,8 +934,11 @@ class SettingsDialog(QtWidgets.QDialog):
         splitter.setChildrenCollapsible(False)
         splitter.addWidget(self.nav)
         splitter.addWidget(self.stack)
-        splitter.setStretchFactor(0, 0)
-        splitter.setStretchFactor(1, 1)
+        splitter.setStretchFactor(0, 0)  # 左侧导航不拉伸
+        splitter.setStretchFactor(1, 1)  # 右侧内容区域拉伸
+        # 设置分割器的初始比例，左侧占用固定宽度
+        splitter.setSizes([220, 600])  # 左侧220px，右侧600px（会自动调整）
+        splitter.setHandleWidth(2)      # 设置分割条宽度
 
         v = QtWidgets.QVBoxLayout(self)
         v.addWidget(splitter, 1)
@@ -728,6 +948,8 @@ class SettingsDialog(QtWidgets.QDialog):
         self.btn_ok.setObjectName("primary")
         self.btn_cancel = QtWidgets.QPushButton("取消")
         hb = QtWidgets.QHBoxLayout()
+        hb.setSpacing(8)  # 设置按钮间距
+        hb.setContentsMargins(16, 12, 16, 12)  # 设置布局边距
         hb.addStretch(1)
         hb.addWidget(self.btn_ok)
         hb.addWidget(self.btn_cancel)
