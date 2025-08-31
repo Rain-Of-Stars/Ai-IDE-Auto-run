@@ -1,4 +1,4 @@
-# AI-IDE-Auto-Run
+# AI-IDE-Auto-Run-节能版本（开发中）
 用PySide6做的Windows小工具，解决Trae IDE的“继续”、Windsurf的“Run”、Codex的“Approve”等等，实现AI IDE的自动化运行。
 
 
