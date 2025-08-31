@@ -664,7 +664,7 @@ class SettingsDialog(QtWidgets.QDialog):
         # — 常规 · 扫描与性能（仅保留扫描相关，便于与其他设置解耦）
         page_general_misc = QtWidgets.QWidget()
         form_misc = QtWidgets.QFormLayout(page_general_misc)
-        form_misc.setLabelAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
+        form_misc.setLabelAlignment(QtCore.Qt.AlignmentFlag.AlignLeft)
         form_misc.setContentsMargins(16, 16, 16, 16)
         form_misc.setFieldGrowthPolicy(QtWidgets.QFormLayout.FieldsStayAtSizeHint)
         form_misc.setFormAlignment(QtCore.Qt.AlignmentFlag.AlignLeft | QtCore.Qt.AlignmentFlag.AlignTop)
@@ -680,7 +680,7 @@ class SettingsDialog(QtWidgets.QDialog):
         
         # 显示器索引设置
         form_display = QtWidgets.QFormLayout()
-        form_display.setLabelAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
+        form_display.setLabelAlignment(QtCore.Qt.AlignmentFlag.AlignLeft)
         form_display.setFieldGrowthPolicy(QtWidgets.QFormLayout.FieldsStayAtSizeHint)
         form_display.setFormAlignment(QtCore.Qt.AlignmentFlag.AlignLeft | QtCore.Qt.AlignmentFlag.AlignTop)
         form_display.setHorizontalSpacing(12)
@@ -714,7 +714,7 @@ class SettingsDialog(QtWidgets.QDialog):
         # — 常规 · 日志（单独页）
         page_log = QtWidgets.QWidget()
         form_log = QtWidgets.QFormLayout(page_log)
-        form_log.setLabelAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
+        form_log.setLabelAlignment(QtCore.Qt.AlignmentFlag.AlignLeft)
         form_log.setContentsMargins(16, 16, 16, 16)
         form_log.setFieldGrowthPolicy(QtWidgets.QFormLayout.FieldsStayAtSizeHint)
         form_log.setFormAlignment(QtCore.Qt.AlignmentFlag.AlignLeft | QtCore.Qt.AlignmentFlag.AlignTop)
@@ -726,7 +726,7 @@ class SettingsDialog(QtWidgets.QDialog):
         self.cb_notifications = CustomCheckBox("启用通知提示"); self.cb_notifications.setChecked(self.cfg.enable_notifications)
         page_notify = QtWidgets.QWidget()
         form_notify = QtWidgets.QFormLayout(page_notify)
-        form_notify.setLabelAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
+        form_notify.setLabelAlignment(QtCore.Qt.AlignmentFlag.AlignLeft)
         form_notify.setContentsMargins(16, 16, 16, 16)
         form_notify.setFieldGrowthPolicy(QtWidgets.QFormLayout.FieldsStayAtSizeHint)
         form_notify.setFormAlignment(QtCore.Qt.AlignmentFlag.AlignLeft | QtCore.Qt.AlignmentFlag.AlignTop)
@@ -737,7 +737,7 @@ class SettingsDialog(QtWidgets.QDialog):
         # — 匹配 · 参数与尺度
         page_match = QtWidgets.QWidget()
         form_match = QtWidgets.QFormLayout(page_match)
-        form_match.setLabelAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
+        form_match.setLabelAlignment(QtCore.Qt.AlignmentFlag.AlignLeft)
         form_match.setContentsMargins(16, 16, 16, 16)
         form_match.setFieldGrowthPolicy(QtWidgets.QFormLayout.FieldsStayAtSizeHint)
         form_match.setFormAlignment(QtCore.Qt.AlignmentFlag.AlignLeft | QtCore.Qt.AlignmentFlag.AlignTop)
@@ -752,7 +752,7 @@ class SettingsDialog(QtWidgets.QDialog):
         # — 点击 · 点击与坐标
         page_click = QtWidgets.QWidget()
         form_click = QtWidgets.QFormLayout(page_click)
-        form_click.setLabelAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
+        form_click.setLabelAlignment(QtCore.Qt.AlignmentFlag.AlignLeft)
         form_click.setContentsMargins(16, 16, 16, 16)
         form_click.setFieldGrowthPolicy(QtWidgets.QFormLayout.FieldsStayAtSizeHint)
         form_click.setFormAlignment(QtCore.Qt.AlignmentFlag.AlignLeft | QtCore.Qt.AlignmentFlag.AlignTop)
@@ -777,13 +777,13 @@ class SettingsDialog(QtWidgets.QDialog):
         
         # 设置标签对齐方式和更清晰的标签文本
         x_label = QtWidgets.QLabel("X坐标:")
-        x_label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+        x_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
         y_label = QtWidgets.QLabel("Y坐标:")
-        y_label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+        y_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
         w_label = QtWidgets.QLabel("宽度:")
-        w_label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+        w_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
         h_label = QtWidgets.QLabel("高度:")
-        h_label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+        h_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
         
         grid_roi.addWidget(x_label, 0, 0)
         grid_roi.addWidget(self.sb_roi_x, 0, 1)
@@ -813,7 +813,7 @@ class SettingsDialog(QtWidgets.QDialog):
         # — 调试 · 调试与输出
         page_debug = QtWidgets.QWidget()
         form_debug = QtWidgets.QFormLayout(page_debug)
-        form_debug.setLabelAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
+        form_debug.setLabelAlignment(QtCore.Qt.AlignmentFlag.AlignLeft)
         form_debug.setContentsMargins(16, 16, 16, 16)
         form_debug.setFieldGrowthPolicy(QtWidgets.QFormLayout.FieldsStayAtSizeHint)
         form_debug.setFormAlignment(QtCore.Qt.AlignmentFlag.AlignLeft | QtCore.Qt.AlignmentFlag.AlignTop)
