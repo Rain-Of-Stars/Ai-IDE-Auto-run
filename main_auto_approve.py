@@ -326,7 +326,10 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
         """设置窗口关闭后回调：清理单实例引用。"""
         self.settings_dlg = None
 
-
+    def _sync_tray_menu_state(self):
+        """同步托盘菜单状态：确保右键菜单与UI设置保持一致。"""
+        # 同步日志开关状态
+        self.act_logging.setChecked(self.cfg.enable_logging)
 
     def _focus_window(self, w: QtWidgets.QWidget):
         """将窗口置于前台并获取焦点（尽量兼容Windows前台限制）。"""

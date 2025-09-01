@@ -5,6 +5,8 @@
 """
 from __future__ import annotations
 import os
+import shutil
+import hashlib
 from typing import Tuple, List
 
 import mss
@@ -1183,18 +1185,72 @@ class SettingsDialog(QtWidgets.QDialog):
     # ---------- 交互逻辑 ----------
 
     def _on_add_templates(self):
-        """添加一个或多个模板图片到列表。"""
+        """添加一个或多个模板图片到列表。
+        
+        改进：将选择的图片复制到 assets/images 目录，并使用相对路径添加到列表中。
+        """
         paths, _ = QtWidgets.QFileDialog.getOpenFileNames(
             self, "选择模板图片", os.getcwd(), "Images (*.png *.jpg *.jpeg *.bmp)"
         )
         if not paths:
             return
+        
+        # 确保 assets/images 目录存在
+        images_abs, images_rel = self._ensure_assets_images_dir()
+        
         # 避免重复添加
         existing = set(self._get_template_paths())
+        
         for p in paths:
-            if p and p not in existing:
-                self.list_templates.addItem(p)
-                existing.add(p)
+            if not p:
+                continue
+                
+            # 首先检查是否已经存在相同内容的文件
+            duplicate_filename = self._find_duplicate_file_by_content(p, images_abs)
+            if duplicate_filename:
+                # 文件内容已存在，使用现有文件的相对路径
+                rel_path = os.path.join(images_rel, duplicate_filename)
+                if rel_path not in existing:
+                    self.list_templates.addItem(rel_path)
+                    existing.add(rel_path)
+                    QtWidgets.QMessageBox.information(
+                        self, "文件已存在", 
+                        f"检测到相同内容的文件已存在：\n{duplicate_filename}\n\n已添加到模板列表，无需重复复制。"
+                    )
+                else:
+                    QtWidgets.QMessageBox.information(
+                        self, "文件已存在", 
+                        f"相同内容的文件已存在且已在模板列表中：\n{duplicate_filename}"
+                    )
+                continue
+                
+            # 生成目标文件名（保持原始文件名，如果重复则添加计数器）
+            original_name = os.path.basename(p)
+            name, ext = os.path.splitext(original_name)
+            target_name = original_name
+            target_abs_path = os.path.join(images_abs, target_name)
+            
+            # 如果文件名已存在，添加计数器避免冲突
+            counter = 1
+            while os.path.exists(target_abs_path):
+                target_name = f"{name}_{counter}{ext}"
+                target_abs_path = os.path.join(images_abs, target_name)
+                counter += 1
+            
+            try:
+                # 复制文件到 assets/images 目录
+                shutil.copy2(p, target_abs_path)
+                
+                # 使用相对路径添加到列表
+                rel_path = os.path.join(images_rel, target_name)
+                if rel_path not in existing:
+                    self.list_templates.addItem(rel_path)
+                    existing.add(rel_path)
+                    
+            except Exception as e:
+                QtWidgets.QMessageBox.warning(
+                    self, "复制失败", f"无法复制文件到 assets/images 目录：\n{str(e)}"
+                )
 
     def _on_remove_selected(self):
         """删除选中的模板路径。"""
@@ -1206,6 +1262,50 @@ class SettingsDialog(QtWidgets.QDialog):
         """清空模板列表。"""
         self.list_templates.clear()
 
+    def _calculate_file_hash(self, file_path: str) -> str:
+        """计算文件的MD5哈希值。
+        
+        Args:
+            file_path: 文件路径
+            
+        Returns:
+            文件的MD5哈希值字符串
+        """
+        hash_md5 = hashlib.md5()
+        try:
+            with open(file_path, "rb") as f:
+                for chunk in iter(lambda: f.read(4096), b""):
+                    hash_md5.update(chunk)
+            return hash_md5.hexdigest()
+        except Exception:
+            return ""
+    
+    def _find_duplicate_file_by_content(self, source_file: str, target_dir: str) -> str:
+        """在目标目录中查找与源文件内容相同的文件。
+        
+        Args:
+            source_file: 源文件路径
+            target_dir: 目标目录路径
+            
+        Returns:
+            如果找到重复文件，返回重复文件的文件名；否则返回空字符串
+        """
+        if not os.path.exists(source_file) or not os.path.exists(target_dir):
+            return ""
+            
+        source_hash = self._calculate_file_hash(source_file)
+        if not source_hash:
+            return ""
+            
+        # 遍历目标目录中的所有文件
+        for filename in os.listdir(target_dir):
+            file_path = os.path.join(target_dir, filename)
+            if os.path.isfile(file_path):
+                if self._calculate_file_hash(file_path) == source_hash:
+                    return filename
+                    
+        return ""
+    
     def _ensure_assets_images_dir(self) -> Tuple[str, str]:
         """确保 assets/images 目录存在，返回(绝对路径, 相对路径)。
         
@@ -1225,20 +1325,26 @@ class SettingsDialog(QtWidgets.QDialog):
             return ""
         if os.path.isabs(p) and os.path.exists(p):
             return p
-        # 工作目录相对路径
-        wd_path = os.path.abspath(os.path.join(os.getcwd(), p))
-        if os.path.exists(wd_path):
-            return wd_path
+        
+        # 获取项目根目录
+        proj_root = get_app_base_dir()
+        
+        # 优先尝试项目根相对路径
+        proj_path = os.path.join(proj_root, p)
+        if os.path.exists(proj_path):
+            return proj_path
+            
         # 项目根下的 assets/images
         images_abs, _ = self._ensure_assets_images_dir()
         candidate = os.path.join(images_abs, os.path.basename(p))
         if os.path.exists(candidate):
             return candidate
-        # 项目根相对路径
-        proj_root = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
-        other = os.path.abspath(os.path.join(proj_root, p))
-        if os.path.exists(other):
-            return other
+            
+        # 最后尝试工作目录相对路径（兼容性）
+        wd_path = os.path.abspath(os.path.join(os.getcwd(), p))
+        if os.path.exists(wd_path):
+            return wd_path
+            
         return p
 
     def _on_preview_template(self):

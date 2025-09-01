@@ -7,10 +7,15 @@
 
 import json
 import os
+import sys
 import mss
 import cv2
 import numpy as np
 from pathlib import Path
+
+# 添加项目根目录到路径
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
+from auto_approve.path_utils import get_app_base_dir
 
 def load_config():
     """加载配置文件"""
@@ -51,24 +56,24 @@ def capture_screen(monitor_index, monitors):
 def find_template_in_image(img, template_path, threshold=0.7):
     """在图像中查找模板"""
     try:
-        # 尝试使用相对/兼容路径：优先原路径，其次尝试 assets/images 下的同名文件
+        # 处理相对路径和绝对路径
+        if not os.path.isabs(template_path):
+            # 相对路径基于项目根目录
+            proj_root = get_app_base_dir()
+            template_path = os.path.join(proj_root, template_path)
+            print(f"使用项目根相对路径: {template_path}")
+        
         if not Path(template_path).exists():
+            # 尝试在 assets/images 下查找同名文件
             template_name = Path(template_path).name
-            # 尝试当前目录
-            if Path(template_name).exists():
-                template_path = str(template_name)
-                print(f"使用相对路径: {template_path}")
+            proj_root = get_app_base_dir()
+            candidate = Path(proj_root) / 'assets' / 'images' / template_name
+            if candidate.exists():
+                template_path = str(candidate)
+                print(f"使用资源路径: {template_path}")
             else:
-                # 尝试工程根目录的 assets/images
-                tool_dir = os.path.dirname(__file__)
-                proj_root = os.path.abspath(os.path.join(tool_dir, os.pardir))
-                candidate = Path(proj_root) / 'assets' / 'images' / template_name
-                if candidate.exists():
-                    template_path = str(candidate)
-                    print(f"使用资源路径: {template_path}")
-                else:
-                    print(f"❌ 模板文件不存在: {template_path}")
-                    return None
+                print(f"❌ 模板文件不存在: {template_path}")
+                return None
         
         # 使用cv2.imdecode来避免路径编码问题
         try:

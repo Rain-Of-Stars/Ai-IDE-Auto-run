@@ -255,11 +255,24 @@ class ScannerWorker(QtCore.QThread):
         """加载并缓存模板图像（支持多模板、可选多尺度）。"""
         # 组装当前模板签名：多路径 + 灰度/多尺度/倍率
         paths: List[str] = []
+        proj_root = get_app_base_dir()
         if getattr(self.cfg, "template_paths", None):
-            paths = [os.path.abspath(p) for p in self.cfg.template_paths if str(p).strip()]
+            for p in self.cfg.template_paths:
+                p = str(p).strip()
+                if not p:
+                    continue
+                if os.path.isabs(p):
+                    paths.append(p)
+                else:
+                    # 相对路径基于项目根目录
+                    paths.append(os.path.join(proj_root, p))
         if not paths:
             # 回退单路径
-            paths = [os.path.abspath(self.cfg.template_path)]
+            p = str(self.cfg.template_path).strip()
+            if os.path.isabs(p):
+                paths = [p]
+            else:
+                paths = [os.path.join(proj_root, p)]
 
         key = "|".join([
             ";".join(paths),
@@ -278,8 +291,7 @@ class ScannerWorker(QtCore.QThread):
         total_tpl_count = 0
         missing_files: List[str] = []
 
-        # 计算工程根目录，用于资源回退（assets/images）
-        proj_root = get_app_base_dir()
+        # 资源回退目录（assets/images）
         assets_img_dir = os.path.join(proj_root, 'assets', 'images')
 
         for path in paths:

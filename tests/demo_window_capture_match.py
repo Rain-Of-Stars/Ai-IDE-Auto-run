@@ -15,6 +15,7 @@ import numpy as np
 
 from auto_approve.config_manager import load_config, save_config
 from auto_approve.wgc_capture import WindowCaptureManager, find_window_by_title
+from auto_approve.path_utils import get_app_base_dir
 
 
 def load_first_template(cfg) -> np.ndarray | None:
@@ -25,12 +26,9 @@ def load_first_template(cfg) -> np.ndarray | None:
         if not p:
             continue
         if not os.path.isabs(p):
-            # 相对项目根或cwd都尝试
-            cand = [os.path.join(os.getcwd(), p), os.path.join(os.path.dirname(__file__), os.pardir, p)]
-            for c in cand:
-                if os.path.exists(c):
-                    p = c
-                    break
+            # 相对路径基于项目根目录
+            proj_root = get_app_base_dir()
+            p = os.path.join(proj_root, p)
         if os.path.exists(p):
             img = cv2.imdecode(np.fromfile(p, dtype=np.uint8), cv2.IMREAD_COLOR)
             if img is not None:
