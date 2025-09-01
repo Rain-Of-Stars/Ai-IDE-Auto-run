@@ -10,6 +10,7 @@ import os
 import sys
 import signal
 import warnings
+import ctypes
 
 # 在导入Qt库之前关闭 qt.qpa.window 分类日志，以屏蔽
 # “SetProcessDpiAwarenessContext() failed: 拒绝访问。” 的无害告警。
@@ -83,12 +84,13 @@ def apply_modern_theme(app: QtWidgets.QApplication):
 class TrayApp(QtWidgets.QSystemTrayIcon):
     def __init__(self, app: QtWidgets.QApplication):
         # 使用自定义图标文件
-        self.icon_path = os.path.join("assets", "icons", "icons", "custom_icon.ico")
+        base_dir = os.path.dirname(__file__)
+        self.icon_path = os.path.join(base_dir, "assets", "icons", "icons", "custom_icon.ico")
         if os.path.exists(self.icon_path):
             icon = QtGui.QIcon(self.icon_path)
         else:
-            # 如果图标文件不存在，使用备用的自定义绘制图标
-            icon = self._create_custom_icon()
+            # 如果图标文件不存在，使用透明占位，避免系统通知头部出现绿色勾
+            icon = self._create_transparent_icon(16)
         super().__init__(icon)
         self.app = app
         self.setToolTip("AI-IDE-Auto-Run - 未启动")
@@ -488,12 +490,19 @@ def main():
     app = QtWidgets.QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
     
+    # Windows: 设置 AppUserModelID，避免通知显示为“Python”，并统一通知归属
+    try:
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("AI-IDE-Auto-Run")
+    except Exception:
+        pass
+    
     # 设置应用程序名称和显示名称（用于通知消息标题）
     app.setApplicationName("AI-IDE-Auto-Run")
     app.setApplicationDisplayName("AI-IDE-Auto-Run")
     
     # 设置应用程序图标（用于通知消息）
-    icon_path = os.path.join("assets", "icons", "icons", "custom_icon.ico")
+    base_dir = os.path.dirname(__file__)
+    icon_path = os.path.join(base_dir, "assets", "icons", "icons", "custom_icon.ico")
     if os.path.exists(icon_path):
         app.setWindowIcon(QtGui.QIcon(icon_path))
     
