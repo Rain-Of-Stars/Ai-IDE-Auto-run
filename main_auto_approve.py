@@ -158,6 +158,13 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
         # 双击托盘图标：打开设置
         self.activated.connect(self._on_activated)
 
+        # 为“无小图标”的系统通知准备一枚透明托盘图标
+        # 说明：Windows 通知会在标题左侧显示触发托盘图标的小图标；
+        # 通过使用透明图标的临时托盘来发送通知，可在视觉上去除该小图标。
+        self._transparent_icon = self._create_transparent_icon(16)
+        self._toast_tray = QtWidgets.QSystemTrayIcon(self._transparent_icon)
+        self._toast_tray.setVisible(False)
+
         # 初始通知（尊重通知开关）
         self.show()
         self.notify_with_custom_icon("AI-IDE-Auto-Run", "已在后台托盘运行", self.icon_path, 3000)
@@ -191,6 +198,28 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
         painter.end()
         
         return QtGui.QIcon(pixmap)
+
+    def _create_transparent_icon(self, size: int = 16) -> QtGui.QIcon:
+        """创建完全透明的图标，用于隐藏通知标题左上角的小图标。"""
+        pm = QtGui.QPixmap(size, size)
+        pm.fill(QtCore.Qt.transparent)
+        return QtGui.QIcon(pm)
+
+    def _show_toast(self, title: str, message: str, icon_or_enum, msecs: int):
+        """通过透明托盘发送系统通知，避免标题左上角的小图标显示。
+        参数 icon_or_enum 可为 QIcon（显示为内容图片）或 QSystemTrayIcon.MessageIcon（信息级别）。
+        """
+        try:
+            # 显示临时托盘以触发系统通知
+            self._toast_tray.show()
+            # 根据类型选择重载
+            if isinstance(icon_or_enum, QtGui.QIcon):
+                self._toast_tray.showMessage(title, message, icon_or_enum, msecs)
+            else:
+                self._toast_tray.showMessage(title, message, icon_or_enum, msecs)
+        finally:
+            # 稍后隐藏，避免托盘区域出现多余图标
+            QtCore.QTimer.singleShot(100, self._toast_tray.hide)
 
     # ---------- 线程联动 ----------
 
@@ -251,8 +280,12 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
         except Exception:
             pass
         if getattr(self.cfg, "enable_notifications", True):
-            # 仅在允许时显示托盘气泡
-            self.showMessage(title, message, icon, msecs)
+            # 使用透明托盘发送以隐藏标题左上角的小图标
+            try:
+                self._show_toast(title, message, QtWidgets.QSystemTrayIcon.NoIcon, msecs)
+            except Exception:
+                # 兜底：直接使用当前托盘
+                self.showMessage(title, message, icon, msecs)
     
     def notify_with_custom_icon(self, title: str, message: str, custom_icon_path: str = None, msecs: int = 2000):
         """托盘通知封装：使用自定义图标显示通知。
@@ -267,14 +300,20 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
         except Exception:
             pass
         if getattr(self.cfg, "enable_notifications", True):
-            # 使用自定义图标显示通知
-            if custom_icon_path and os.path.exists(custom_icon_path):
-                custom_icon = QtGui.QIcon(custom_icon_path)
-                # 使用支持自定义QIcon的showMessage重载版本
-                self.showMessage(title, message, custom_icon, msecs)
-            else:
-                # 如果自定义图标不存在，使用托盘图标
-                self.showMessage(title, message, self.icon(), msecs)
+            # 使用自定义图标显示通知（并通过透明托盘隐藏标题的小图标）
+            custom_icon = None
+            try:
+                if custom_icon_path and isinstance(custom_icon_path, (str, bytes)) and os.path.exists(custom_icon_path):
+                    custom_icon = QtGui.QIcon(custom_icon_path)
+                else:
+                    custom_icon = QtGui.QIcon()  # 空图标：不显示内容图
+                self._show_toast(title, message, custom_icon, msecs)
+            except Exception:
+                # 兜底：直接使用当前托盘
+                if isinstance(custom_icon, QtGui.QIcon) and not custom_icon.isNull():
+                    self.showMessage(title, message, custom_icon, msecs)
+                else:
+                    self.showMessage(title, message, QtWidgets.QSystemTrayIcon.NoIcon, msecs)
 
     def toggle_logging(self, checked: bool):
         self.cfg = load_config()
@@ -429,8 +468,7 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
         self.setToolTip(tooltip)
 
     def on_hit(self, score: float, sx: int, sy: int):
-        self.notify_with_custom_icon("已自动点击", f"score={score:.3f} @ ({sx},{sy})", self.icon_path,
-                    QtWidgets.QSystemTrayIcon.Information, 2500)
+        self.notify_with_custom_icon("已自动点击", f"score={score:.3f} @ ({sx},{sy})", self.icon_path, 2500)
 
     def on_log(self, text: str):
         # 仅提示关键日志，避免频繁打扰

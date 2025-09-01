@@ -16,7 +16,8 @@
     "assets\\images\\template_20250901_030258_948_1.png",
     "assets\\images\\template_20250901_030312_159_1.png",
     "assets\\images\\template_20250901_030326_263_1.png",
-    "assets\\images\\approve_pix.png"
+    "assets\\images\\approve_pix.png",
+    "assets\\images\\template_20250901_200010_969.png"
   ],
   "monitor_index": 2,
   "roi": {
@@ -58,10 +59,10 @@
   "enable_multi_screen_polling": true,
   "screen_polling_interval_ms": 1000,
   "capture_backend": "window",
-  "target_hwnd": 15015974,
+  "target_hwnd": 69914,
   "target_window_title": "Code",
   "window_title_partial_match": true,
-  "target_process": "Code.exe",
+  "target_process": "Windsurf.exe",
   "process_partial_match": true,
   "fps_max": 1,
   "capture_timeout_ms": 5000,
