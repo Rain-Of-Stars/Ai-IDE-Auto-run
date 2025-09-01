@@ -83,9 +83,9 @@ def apply_modern_theme(app: QtWidgets.QApplication):
 class TrayApp(QtWidgets.QSystemTrayIcon):
     def __init__(self, app: QtWidgets.QApplication):
         # 使用自定义图标文件
-        icon_path = os.path.join("assets", "icons", "icons", "custom_icon.ico")
-        if os.path.exists(icon_path):
-            icon = QtGui.QIcon(icon_path)
+        self.icon_path = os.path.join("assets", "icons", "icons", "custom_icon.ico")
+        if os.path.exists(self.icon_path):
+            icon = QtGui.QIcon(self.icon_path)
         else:
             # 如果图标文件不存在，使用备用的自定义绘制图标
             icon = self._create_custom_icon()
@@ -160,7 +160,7 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
 
         # 初始通知（尊重通知开关）
         self.show()
-        self.notify("AI-IDE-Auto-Run", "已在后台托盘运行", QtWidgets.QSystemTrayIcon.Information, 3000)
+        self.notify_with_custom_icon("AI-IDE-Auto-Run", "已在后台托盘运行", self.icon_path, 3000)
 
         # 自动启动扫描
         if self.cfg.auto_start_scan:
@@ -253,14 +253,35 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
         if getattr(self.cfg, "enable_notifications", True):
             # 仅在允许时显示托盘气泡
             self.showMessage(title, message, icon, msecs)
+    
+    def notify_with_custom_icon(self, title: str, message: str, custom_icon_path: str = None, msecs: int = 2000):
+        """托盘通知封装：使用自定义图标显示通知。
+        参数说明：
+        - title/message: 通知标题与内容
+        - custom_icon_path: 自定义图标文件路径，如果为None则使用托盘图标
+        - msecs: 显示毫秒数
+        """
+        try:
+            # 读取最新配置以确保切换后立即生效
+            self.cfg = load_config()
+        except Exception:
+            pass
+        if getattr(self.cfg, "enable_notifications", True):
+            # 使用自定义图标显示通知
+            if custom_icon_path and os.path.exists(custom_icon_path):
+                custom_icon = QtGui.QIcon(custom_icon_path)
+                # 使用支持自定义QIcon的showMessage重载版本
+                self.showMessage(title, message, custom_icon, msecs)
+            else:
+                # 如果自定义图标不存在，使用托盘图标
+                self.showMessage(title, message, self.icon(), msecs)
 
     def toggle_logging(self, checked: bool):
         self.cfg = load_config()
         self.cfg.enable_logging = bool(checked)
         save_config(self.cfg)
         enable_file_logging(self.cfg.enable_logging)
-        self.notify("日志设置", "文件日志已{}".format("开启" if checked else "关闭"),
-                    QtWidgets.QSystemTrayIcon.Information, 2000)
+        self.notify_with_custom_icon("日志设置", "文件日志已{}".format("开启" if checked else "关闭"), self.icon_path, 2000)
 
     def open_settings(self):
         """打开设置窗口：若已存在则仅聚焦置前，不重复创建。
@@ -320,7 +341,7 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
                 self.worker.update_config(self.cfg)
 
         # 立即反馈
-        self.notify("设置", "配置已保存", QtWidgets.QSystemTrayIcon.Information, 2000)
+        self.notify_with_custom_icon("设置", "配置已保存", self.icon_path, 2000)
 
     def _on_settings_finished(self, _result: int):
         """设置窗口关闭后回调：清理单实例引用。"""
@@ -408,7 +429,7 @@ class TrayApp(QtWidgets.QSystemTrayIcon):
         self.setToolTip(tooltip)
 
     def on_hit(self, score: float, sx: int, sy: int):
-        self.notify("已自动点击", f"score={score:.3f} @ ({sx},{sy})",
+        self.notify_with_custom_icon("已自动点击", f"score={score:.3f} @ ({sx},{sy})", self.icon_path,
                     QtWidgets.QSystemTrayIcon.Information, 2500)
 
     def on_log(self, text: str):
