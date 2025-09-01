@@ -1,0 +1,68 @@
+{
+  "template_path": "D:/Person_project/AI_IDE_Auto_Run_github/assets/images/approve_pix.png",
+  "template_paths": [
+    "D:/Person_project/AI_IDE_Auto_Run_github/assets/images/approve_pix.png",
+    "D:/Person_project/AI_IDE_Auto_Run_github/assets/images/approve2.png",
+    "D:/Person_project/AI_IDE_Auto_Run_github/assets/images/approve3.png",
+    "D:/Person_project/AI_IDE_Auto_Run_github/assets/images/continue.png",
+    "D:/Person_project/AI_IDE_Auto_Run_github/assets/images/imagerunthistime1.png",
+    "D:/Person_project/AI_IDE_Auto_Run_github/assets/images/Runalt.png",
+    "D:/Person_project/AI_IDE_Auto_Run_github/assets/images/Runeverytime.png",
+    "D:/Person_project/AI_IDE_Auto_Run_github/assets/images/Runthistime.png",
+    "assets\\images\\template_20250831_052918_072.png",
+    "assets\\images\\template_20250831_180646_718.png",
+    "assets\\images\\template_20250901_030258_948.png",
+    "assets\\images\\template_20250901_030312_159.png",
+    "assets\\images\\template_20250901_030326_263.png"
+  ],
+  "monitor_index": 2,
+  "roi": {
+    "x": 0,
+    "y": 0,
+    "w": 0,
+    "h": 0
+  },
+  "interval_ms": 800,
+  "threshold": 0.9,
+  "cooldown_s": 5.0,
+  "enable_logging": false,
+  "enable_notifications": true,
+  "grayscale": true,
+  "multi_scale": true,
+  "scales": [
+    1.0,
+    1.25,
+    0.8
+  ],
+  "click_offset": [
+    0.0,
+    0.0
+  ],
+  "min_detections": 1,
+  "auto_start_scan": true,
+  "debug_mode": true,
+  "save_debug_images": false,
+  "debug_image_dir": "debug_images",
+  "enable_coordinate_correction": true,
+  "coordinate_offset": [
+    0,
+    0
+  ],
+  "enhanced_window_finding": true,
+  "click_method": "message",
+  "verify_window_before_click": true,
+  "coordinate_transform_mode": "auto",
+  "enable_multi_screen_polling": true,
+  "screen_polling_interval_ms": 1000,
+  "capture_backend": "window",
+  "target_hwnd": 15015974,
+  "target_window_title": "Code",
+  "window_title_partial_match": true,
+  "target_process": "C:\\Users\\wcx\\AppData\\Local\\Programs\\Microsoft VS Code\\Code.exe",
+  "process_partial_match": true,
+  "fps_max": 1,
+  "capture_timeout_ms": 5000,
+  "restore_minimized_noactivate": true,
+  "restore_minimized_after_capture": false,
+  "enable_electron_optimization": true
+}

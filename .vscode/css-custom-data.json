@@ -1,0 +1,26 @@
+{
+  "version": 1.1,
+  "properties": [
+    {
+      "name": "subcontrol-origin",
+      "status": "nonstandard",
+      "description": "Qt QSS属性：子控件原点（如margin/padding/content/border）。"
+    },
+    {
+      "name": "subcontrol-position",
+      "status": "nonstandard",
+      "description": "Qt QSS属性：子控件位置（如top left/right/bottom等）。"
+    },
+    {
+      "name": "spacing",
+      "status": "nonstandard",
+      "description": "Qt QSS属性：部件内部元素或子控件的间距。"
+    },
+    {
+      "name": "image",
+      "status": "nonstandard",
+      "description": "Qt QSS属性：用于指示器等子控件的位图资源url。"
+    }
+  ]
+}
+
