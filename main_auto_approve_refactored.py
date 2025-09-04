@@ -582,8 +582,17 @@ class RefactoredTrayApp(QtWidgets.QSystemTrayIcon):
             detail == self._cached_detail):
             return
 
-        # 节流控制
-        if current_time - self._last_tooltip_update < self._tooltip_update_interval:
+        # 对关键状态变化放宽节流：初始化→运行/失败/停止 必须立即更新
+        critical_transition = False
+        try:
+            prev_init = ('初始化' in (self._cached_detail or '')) or ('初始化' in (self._cached_status or ''))
+            now_critical = ('已停止' in (status or '')) or ('失败' in (detail or '')) or ('运行' in (status or ''))
+            critical_transition = prev_init or now_critical
+        except Exception:
+            critical_transition = True
+
+        # 节流控制（非关键变化才节流）
+        if (not critical_transition) and (current_time - self._last_tooltip_update < self._tooltip_update_interval):
             return
 
         # 更新缓存

@@ -42,7 +42,7 @@
   "screen_polling_interval_ms": 2000,
   "capture_backend": "window",
   "use_monitor": false,
-  "target_hwnd": 131456,
+  "target_hwnd": 136676,
   "target_window_title": "Code",
   "window_title_partial_match": true,
   "target_process": "Code.exe",

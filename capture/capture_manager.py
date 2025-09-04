@@ -95,14 +95,31 @@ class CaptureManager:
                 border_required=self._border_required
             )
             
-            if success:
-                self._logger.info(f"窗口捕获已启动: hwnd={hwnd}, title='{self._get_window_title(hwnd)}'")
-            else:
+            if not success:
                 self._logger.error(f"窗口捕获启动失败: hwnd={hwnd}")
                 self._session = None
                 self._target_hwnd = None
-                
-            return success
+                return False
+
+            # 启动后快速验证是否有帧输出，避免卡在“初始化中”
+            try:
+                test_frame = self._session.wait_for_frame(timeout=2.0)
+                if test_frame is None:
+                    self._logger.error("窗口捕获已启动但无帧输出，可能窗口选择有误或被最小化")
+                    self._session.close()
+                    self._session = None
+                    self._target_hwnd = None
+                    return False
+            except Exception as e:
+                self._logger.error(f"窗口捕获验证帧失败: {e}")
+                self._logger.error(f"窗口捕获启动失败: hwnd={hwnd}")
+                self._session = None
+                self._target_hwnd = None
+                return False
+
+            # 通过验证，认为启动成功
+            self._logger.info(f"窗口捕获已启动: hwnd={hwnd}, title='{self._get_window_title(hwnd)}'")
+            return True
             
         except Exception as e:
             self._logger.error(f"打开窗口捕获失败: {e}")
@@ -143,14 +160,30 @@ class CaptureManager:
                 border_required=self._border_required
             )
             
-            if success:
-                self._logger.info(f"显示器捕获已启动: hmonitor={hmonitor}")
-            else:
+            if not success:
                 self._logger.error(f"显示器捕获启动失败: hmonitor={hmonitor}")
                 self._session = None
                 self._target_hmonitor = None
-                
-            return success
+                return False
+
+            # 启动后快速验证帧输出，避免卡在“初始化中”
+            try:
+                test_frame = self._session.wait_for_frame(timeout=2.0)
+                if test_frame is None:
+                    self._logger.error("显示器捕获已启动但无帧输出，可能WGC环境异常")
+                    self._session.close()
+                    self._session = None
+                    self._target_hmonitor = None
+                    return False
+            except Exception as e:
+                self._logger.error(f"显示器捕获验证帧失败: {e}")
+                self._logger.error(f"显示器捕获启动失败: hmonitor={hmonitor}")
+                self._session = None
+                self._target_hmonitor = None
+                return False
+
+            self._logger.info(f"显示器捕获已启动: hmonitor={hmonitor}")
+            return True
             
         except Exception as e:
             self._logger.error(f"打开显示器捕获失败: {e}")

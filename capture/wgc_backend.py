@@ -138,8 +138,9 @@ class WGCCaptureSession:
             window_name = None
             monitor_index = None
 
+            window_pid = None
             if self._target_hwnd:
-                # 获取窗口标题作为window_name
+                # 获取窗口标题作为window_name，并尝试读取PID
                 try:
                     length = user32.GetWindowTextLengthW(self._target_hwnd)
                     if length > 0:
@@ -150,6 +151,15 @@ class WGCCaptureSession:
                     else:
                         self._logger.warning(f"无法获取窗口标题，HWND={self._target_hwnd}")
                         window_name = None
+                    # 读取窗口进程ID
+                    try:
+                        pid = wintypes.DWORD()
+                        user32.GetWindowThreadProcessId(self._target_hwnd, ctypes.byref(pid))
+                        window_pid = int(pid.value) if pid.value else None
+                        if window_pid:
+                            self._logger.debug(f"WGC目标窗口PID: {window_pid}")
+                    except Exception as e:
+                        self._logger.debug(f"获取窗口PID失败: {e}")
                 except Exception as e:
                     self._logger.warning(f"获取窗口标题失败: {e}")
                     window_name = None
@@ -196,24 +206,78 @@ class WGCCaptureSession:
                 dirty_region=_dirty_region,
             )
 
-            if window_name:
-                self._logger.debug(f"使用window_name: '{window_name}', kwargs={common_kwargs}")
-                self._session = windows_capture.WindowsCapture(
-                    window_name=window_name,
-                    **common_kwargs,
-                )
-            elif monitor_index is not None:
-                self._logger.debug(f"使用monitor_index: {monitor_index}, kwargs={common_kwargs}")
-                self._session = windows_capture.WindowsCapture(
-                    monitor_index=monitor_index,
-                    **common_kwargs,
-                )
-            else:
-                # 默认捕获
-                self._logger.debug(f"使用默认参数, kwargs={common_kwargs}")
-                self._session = windows_capture.WindowsCapture(
-                    **common_kwargs,
-                )
+            # 构造WindowsCapture，优先使用HWND/进程ID，避免多屏同名窗口歧义
+            created = False
+            try:
+                import inspect
+                init_params = []
+                try:
+                    init_params = list(inspect.signature(windows_capture.WindowsCapture.__init__).parameters.keys())
+                except Exception:
+                    init_params = []
+
+                # 1) HWND优先
+                if self._target_hwnd:
+                    for hwnd_param in ("hwnd", "window_handle", "handle", "hWnd", "window_hwnd"):
+                        if hwnd_param in init_params:
+                            self._logger.debug(f"使用{hwnd_param}捕获: HWND={self._target_hwnd}, kwargs={common_kwargs}")
+                            self._session = windows_capture.WindowsCapture(
+                                **{hwnd_param: int(self._target_hwnd)},
+                                **common_kwargs,
+                            )
+                            created = True
+                            break
+
+                # 2) 进程ID次之
+                if (not created) and window_pid:
+                    for pid_param in ("process_id", "pid", "processId", "processid"):
+                        if pid_param in init_params:
+                            self._logger.debug(f"使用{pid_param}捕获: PID={window_pid}, kwargs={common_kwargs}")
+                            self._session = windows_capture.WindowsCapture(
+                                **{pid_param: int(window_pid)},
+                                **common_kwargs,
+                            )
+                            created = True
+                            break
+
+                # 3) 再退化为window_name（可能存在歧义）
+                if (not created) and window_name:
+                    name_param = "window_name" if "window_name" in init_params else (
+                        "window_title" if "window_title" in init_params else None
+                    )
+                    if name_param:
+                        self._logger.debug(f"使用{name_param}: '{window_name}', kwargs={common_kwargs}")
+                        self._session = windows_capture.WindowsCapture(
+                            **{name_param: window_name},
+                            **common_kwargs,
+                        )
+                        created = True
+
+                # 4) 显示器捕获（1基索引）
+                if (not created) and (monitor_index is not None):
+                    index_param = "monitor_index" if "monitor_index" in init_params else (
+                        "monitor" if "monitor" in init_params else None
+                    )
+                    if index_param:
+                        self._logger.debug(f"使用{index_param}: {monitor_index}, kwargs={common_kwargs}")
+                        self._session = windows_capture.WindowsCapture(
+                            **{index_param: int(monitor_index)},
+                            **common_kwargs,
+                        )
+                        created = True
+
+                # 5) 最后兜底：无定位参数
+                if not created:
+                    self._logger.debug(f"使用默认参数, kwargs={common_kwargs}")
+                    self._session = windows_capture.WindowsCapture(
+                        **common_kwargs,
+                    )
+                    created = True
+
+            except TypeError as e:
+                # 参数不兼容时，回退到最简单形式
+                self._logger.warning(f"WindowsCapture参数不兼容，回退默认构造: {e}")
+                self._session = windows_capture.WindowsCapture(**common_kwargs)
             self._logger.debug("WindowsCapture创建完成")
 
             # 设置回调函数 - 使用正确的方式
