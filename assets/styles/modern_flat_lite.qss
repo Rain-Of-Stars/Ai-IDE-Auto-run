@@ -1,0 +1,74 @@
+/* 极简主题 - 最小资源占用 */
+
+/* 基础样式 - 仅必要属性 */
+QWidget {
+  background: #232428;
+  color: #E6E6E6;
+  font-family: "Microsoft YaHei UI", sans-serif;
+  font-size: 11pt;
+}
+
+/* 按钮 - 简化样式 */
+QPushButton {
+  background: #2B2D31;
+  border: 1px solid #3C3F44;
+  padding: 6px 12px;
+  border-radius: 4px;
+}
+QPushButton:hover {
+  border-color: #2F80ED;
+}
+
+/* 输入框 - 基础样式 */
+QLineEdit, QTextEdit, QComboBox {
+  background: #32343A;
+  border: 1px solid #3C3F44;
+  padding: 4px 8px;
+  border-radius: 3px;
+}
+QLineEdit:focus, QTextEdit:focus, QComboBox:focus {
+  border-color: #2F80ED;
+}
+
+/* 复选框 - 简化 */
+QCheckBox::indicator {
+  width: 14px;
+  height: 14px;
+  border: 1px solid #3C3F44;
+  background: #32343A;
+}
+QCheckBox::indicator:checked {
+  background: #2F80ED;
+}
+
+/* 菜单 - 最小样式 */
+QMenu {
+  background: #2B2D31;
+  border: 1px solid #3C3F44;
+  padding: 2px;
+}
+QMenu::item {
+  padding: 4px 16px;
+}
+QMenu::item:selected {
+  background: #2F80ED;
+}
+
+/* 托盘菜单 - 简化版本 */
+QMenu#TrayMenu {
+  background: #2B2D31;
+  border: 1px solid #3C3F44;
+  border-radius: 6px;
+  padding: 4px;
+  min-width: 160px;
+}
+QMenu#TrayMenu::item {
+  padding: 8px 20px 8px 40px;
+  margin: 1px 4px;
+  border-radius: 4px;
+  color: #E6E6E6;
+}
+QMenu#TrayMenu::item:selected {
+  background: #2F80ED;
+  color: white;
+}

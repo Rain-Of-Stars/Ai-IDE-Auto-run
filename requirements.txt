@@ -1,0 +1,30 @@
+# 自动同意小工具 - Python 3.12 专用依赖（精确版本）
+# 说明：仅保留一份 Python 3.12 适配的依赖清单，保证环境一致性与可复现。
+
+# GUI框架（托盘与设置对话框）
+PySide6==6.7.2
+
+# 图像处理（模板匹配与图像转换）
+opencv-python-headless==4.10.0.84
+
+# 数值计算（Python 3.12 需使用NumPy 2.x）
+numpy==2.1.3
+
+# Windows Graphics Capture（WGC捕获）
+windows-capture==1.5.0
+winrt-runtime==3.2.1
+
+# 异步与网络（主程序按需使用）
+qasync==0.24.0
+aiohttp==3.9.5
+websockets==12.0
+requests==2.32.3
+
+# 系统与性能监控
+psutil==5.9.8
+
+# 安装建议：
+# 1) 若已安装opencv-python，请先卸载：
+#    pip uninstall -y opencv-python
+# 2) 按本文件安装：
+#    pip install -r requirements.txt

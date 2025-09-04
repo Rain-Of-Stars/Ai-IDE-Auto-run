@@ -1,0 +1,47 @@
+/* 超轻量级主题 - 极简资源占用 */
+
+/* 基础样式 - 仅核心属性 */
+QWidget {
+  background: #232428;
+  color: #E6E6E6;
+  font-size: 11pt;
+}
+
+/* 按钮 - 最简样式 */
+QPushButton {
+  background: #2B2D31;
+  border: 1px solid #3C3F44;
+  padding: 4px 8px;
+}
+QPushButton:hover {
+  border-color: #2F80ED;
+}
+
+/* 输入框 - 基础样式 */
+QLineEdit, QComboBox {
+  background: #32343A;
+  border: 1px solid #3C3F44;
+  padding: 3px 6px;
+}
+
+/* 菜单 - 最小样式 */
+QMenu {
+  background: #2B2D31;
+  border: 1px solid #3C3F44;
+}
+QMenu::item {
+  padding: 4px 12px;
+}
+QMenu::item:selected {
+  background: #2F80ED;
+}
+
+/* 托盘菜单 */
+QMenu#TrayMenu::item {
+  padding: 6px 16px 6px 32px;
+  color: #E6E6E6;
+}
+QMenu#TrayMenu::item:selected {
+  background: #2F80ED;
+  color: white;
+}

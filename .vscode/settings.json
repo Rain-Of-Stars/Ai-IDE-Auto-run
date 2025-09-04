@@ -1,0 +1,11 @@
+{
+  // 将*.qss按CSS高亮并为QSS注入自定义属性定义，消除VSCode误报
+  "files.associations": {
+    "*.qss": "css"
+  },
+  "css.customData": [
+    ".vscode/css-custom-data.json"
+  ],
+  "chatgpt.openOnStartup": false
+}
+
