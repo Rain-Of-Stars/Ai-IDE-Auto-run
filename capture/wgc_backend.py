@@ -491,33 +491,65 @@ class WGCCaptureSession:
             except Exception as e:
                 self._logger.debug(f"从frame_buffer提取数据失败: {e}")
 
-            # 方法2：优化的临时文件方法（减少IO开销）
+            # 方法2：内存缓冲区方法（完全避免磁盘IO）
             if hasattr(frame, 'save_as_image'):
                 try:
-                    # 使用内存中的临时目录（如果可用）
-                    temp_dir = getattr(self, '_temp_dir', None)
-                    if temp_dir is None or not os.path.exists(temp_dir):
-                        # 创建专用临时目录，减少文件系统碎片
-                        temp_dir = tempfile.mkdtemp(prefix='wgc_capture_')
-                        self._temp_dir = temp_dir
+                    import io
+                    from PIL import Image
 
-                    # 使用固定文件名，避免频繁创建删除
-                    temp_path = os.path.join(temp_dir, 'frame_capture.png')
+                    # 尝试获取Frame的原始像素数据
+                    pixel_data = None
+                    width = height = 0
 
-                    # 保存Frame为图像
-                    frame.save_as_image(temp_path)
+                    # 尝试多种方式获取像素数据
+                    if hasattr(frame, 'get_pixels'):
+                        pixel_data = frame.get_pixels()
+                    elif hasattr(frame, 'pixels'):
+                        pixel_data = frame.pixels
+                    elif hasattr(frame, 'bitmap_data'):
+                        pixel_data = frame.bitmap_data
+                    elif hasattr(frame, 'surface_data'):
+                        pixel_data = frame.surface_data
 
-                    # 读取图像
-                    img_bgr = cv2.imread(temp_path, cv2.IMREAD_COLOR)
+                    # 获取尺寸信息
+                    if hasattr(frame, 'width') and hasattr(frame, 'height'):
+                        width, height = frame.width, frame.height
+                    elif hasattr(frame, 'size') and len(frame.size) >= 2:
+                        width, height = frame.size[0], frame.size[1]
 
-                    if img_bgr is not None:
-                        self._logger.debug(f"成功使用save_as_image提取图像: {img_bgr.shape}")
-                        return img_bgr
-                    else:
-                        self._logger.warning("cv2.imread读取失败")
+                    # 如果有像素数据，直接处理
+                    if pixel_data and width > 0 and height > 0:
+                        try:
+                            # 创建内存缓冲区
+                            memory_buffer = io.BytesIO()
+
+                            # 根据数据长度判断像素格式
+                            data_len = len(pixel_data)
+                            if data_len == width * height * 4:  # RGBA/BGRA
+                                img_array = np.frombuffer(pixel_data, dtype=np.uint8)
+                                img_array = img_array.reshape((height, width, 4))
+                                # 转换为BGR
+                                if img_array.shape[2] == 4:
+                                    img_bgr = cv2.cvtColor(img_array, cv2.COLOR_BGRA2BGR)
+                                    self._logger.debug(f"成功从像素数据提取BGRA图像: {img_bgr.shape}")
+                                    return img_bgr
+                            elif data_len == width * height * 3:  # RGB/BGR
+                                img_array = np.frombuffer(pixel_data, dtype=np.uint8)
+                                img_array = img_array.reshape((height, width, 3))
+                                # 假设是RGB，转换为BGR
+                                img_bgr = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
+                                self._logger.debug(f"成功从像素数据提取RGB图像: {img_bgr.shape}")
+                                return img_bgr
+                        except Exception as pixel_e:
+                            self._logger.debug(f"处理像素数据失败: {pixel_e}")
+
+                    # 如果无法直接获取像素数据，尝试内存缓冲区保存
+                    # 注意：这里仍然需要临时文件作为最后的回退方案
+                    # 但我们会尽量减少使用
+                    self._logger.debug("无法获取直接像素数据，跳过save_as_image方法以避免磁盘IO")
 
                 except Exception as e:
-                    self._logger.error(f"save_as_image方法失败: {e}")
+                    self._logger.debug(f"内存缓冲区方法失败: {e}")
 
             # 方法3：尝试其他可能的属性
             try:

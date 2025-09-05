@@ -281,23 +281,60 @@ class ScannerWorker(QtCore.QThread):
         return corrected_x, corrected_y
 
     def _save_debug_image(self, img: np.ndarray, prefix: str, extra_info: str = "") -> None:
-        """保存调试图片。"""
+        """保存调试图片到内存 - 避免磁盘IO"""
         if not self.cfg.save_debug_images:
             return
 
-        self._debug_counter += 1
-        timestamp = int(time.time() * 1000)
-        filename = f"{prefix}_{timestamp}_{self._debug_counter:04d}.png"
-        if extra_info:
-            filename = f"{prefix}_{extra_info}_{timestamp}_{self._debug_counter:04d}.png"
-
-        filepath = os.path.join(self._debug_dir, filename)
         try:
-            cv2.imwrite(filepath, img)
-            if self.cfg.debug_mode:
-                self._logger.info(f"调试图片已保存: {filepath}")
+            # 使用内存调试管理器
+            from utils.memory_debug_manager import get_debug_manager
+
+            debug_manager = get_debug_manager()
+
+            # 确保调试管理器已启用
+            if not debug_manager._enabled:
+                debug_manager.enable(True)
+
+            # 生成调试名称
+            self._debug_counter += 1
+            debug_name = f"{prefix}_{self._debug_counter:04d}"
+            if extra_info:
+                debug_name = f"{prefix}_{extra_info}_{self._debug_counter:04d}"
+
+            # 保存到内存
+            image_id = debug_manager.save_debug_image(
+                image=img,
+                name=debug_name,
+                category="scanner",
+                metadata={
+                    'timestamp': time.time(),
+                    'shape': img.shape,
+                    'prefix': prefix,
+                    'extra_info': extra_info,
+                    'counter': self._debug_counter
+                }
+            )
+
+            if image_id and self.cfg.debug_mode:
+                self._logger.info(f"调试图片已保存到内存: {debug_name} (ID: {image_id})")
+
         except Exception as e:
-            self._logger.error(f"保存调试图片失败: {e}")
+            self._logger.error(f"保存调试图片到内存失败: {e}")
+
+            # 回退到磁盘保存（仅在内存方式失败时）
+            try:
+                self._debug_counter += 1
+                timestamp = int(time.time() * 1000)
+                filename = f"{prefix}_{timestamp}_{self._debug_counter:04d}.png"
+                if extra_info:
+                    filename = f"{prefix}_{extra_info}_{timestamp}_{self._debug_counter:04d}.png"
+
+                filepath = os.path.join(self._debug_dir, filename)
+                cv2.imwrite(filepath, img)
+                if self.cfg.debug_mode:
+                    self._logger.info(f"调试图片已保存到磁盘（回退）: {filepath}")
+            except Exception as fallback_e:
+                self._logger.error(f"磁盘保存调试图片也失败: {fallback_e}")
 
     def _validate_coordinates(self, x: int, y: int, monitor_info: dict) -> bool:
         """验证坐标是否在有效范围内。"""
@@ -316,7 +353,7 @@ class ScannerWorker(QtCore.QThread):
         return True
 
     def _load_templates(self, force: bool = False):
-        """加载并缓存模板图像（支持多模板、可选多尺度）。"""
+        """加载并缓存模板图像（支持多模板、可选多尺度）- 使用内存模板管理器"""
         # 组装当前模板签名：多路径 + 灰度/多尺度/倍率
         paths: List[str] = []
         proj_root = get_app_base_dir()
@@ -348,7 +385,55 @@ class ScannerWorker(QtCore.QThread):
         if not force and self._templates and self._tpl_loaded_key == key:
             return
 
-        # 重新加载
+        # 尝试使用内存模板管理器
+        try:
+            from utils.memory_template_manager import get_template_manager
+
+            template_manager = get_template_manager()
+
+            # 预加载所有模板到内存
+            loaded_count = template_manager.load_templates(paths, force_reload=force)
+
+            if loaded_count > 0:
+                # 从内存获取模板数据并应用配置
+                self._templates.clear()
+                self._tpl_loaded_key = key
+
+                memory_templates = template_manager.get_templates(paths)
+                total_tpl_count = 0
+
+                for template_data, (tw, th) in memory_templates:
+                    # 应用灰度转换
+                    if self.cfg.grayscale:
+                        if template_data.ndim == 3:
+                            template_data = cv2.cvtColor(template_data, cv2.COLOR_BGR2GRAY)
+                    else:
+                        if template_data.ndim == 2:
+                            template_data = cv2.cvtColor(template_data, cv2.COLOR_GRAY2BGR)
+
+                    # 应用多尺度
+                    scales = self.cfg.scales if self.cfg.multi_scale else (1.0,)
+                    for s in scales:
+                        if s <= 0:
+                            continue
+                        if s == 1.0:
+                            tpl = template_data.copy()
+                        else:
+                            h, w = template_data.shape[:2]
+                            tpl = cv2.resize(template_data, (int(w * s), int(h * s)), interpolation=cv2.INTER_AREA)
+                        th, tw = tpl.shape[:2]
+                        if th < 2 or tw < 2:
+                            continue
+                        self._templates.append((tpl, (tw, th)))
+                        total_tpl_count += 1
+
+                self.sig_log.emit(f"从内存加载模板完成，路径数={len(paths)}，总尺度数={total_tpl_count}")
+                return
+
+        except Exception as e:
+            self._logger.warning(f"内存模板管理器加载失败，回退到传统方式: {e}")
+
+        # 回退到传统的磁盘加载方式
         self._templates.clear()
         self._tpl_loaded_key = key
 
