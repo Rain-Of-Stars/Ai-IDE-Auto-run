@@ -1,0 +1,89 @@
+============================================================
+代码冗余分析报告
+============================================================
+
+🔄 重复函数检查:
+  ❌ 发现 83 个重复函数:
+    - main()
+      • main_auto_approve_refactored.py
+      • examples\multithreading_demo.py
+      • tests\demo_process_scanner.py
+      • tests\simple_performance_test.py
+      • tests\simple_process_test.py
+      • tests\test_conflict_analysis.py
+      • tests\test_dependency_analysis.py
+      • tests\test_gui_basic.py
+      • tests\test_gui_responsiveness.py
+      • tests\test_memory_optimization.py
+      • tests\test_memory_optimization_cross_platform.py
+      • tests\test_memory_optimization_simple.py
+      • tests\test_real_capture.py
+      • tests\test_redundancy_analysis.py
+      • tests\test_scanner_process.py
+      • tests\test_simple.py
+      • tests\test_system_status.py
+      • tests\verify_process_implementation.py
+      • tools\convert_png_to_ico.py
+      • tools\fix_monitor_config.py
+      • tools\fix_scanner_process_hang.py
+      • tools\fix_wgc_hwnd.py
+      • tools\main_performance_optimizer.py
+      • tools\performance_diagnostic.py
+      • tools\performance_guardian.py
+      • tools\smoke_import_test.py
+      • tools\ui_startup_lag_diagnosis.py
+      • tools\verify_wgc.py
+      • tools\wgc_diagnostic_tool.py
+    - __enter__(self)
+      • main_auto_approve_refactored.py
+      • capture\capture_manager.py
+      • capture\wgc_backend.py
+      • tests\test_utils.py
+    - __exit__(self, exc_type, exc_val, exc_tb)
+      • main_auto_approve_refactored.py
+      • capture\capture_manager.py
+      • capture\wgc_backend.py
+      • tests\test_utils.py
+    - __init__(self, parent)
+      • main_auto_approve_refactored.py
+      • auto_approve\gui_performance_monitor.py
+      • auto_approve\gui_responsiveness_manager.py
+      • auto_approve\hwnd_picker.py
+      • auto_approve\hwnd_picker.py
+      • auto_approve\hwnd_picker.py
+      • auto_approve\performance_monitor.py
+      • auto_approve\screen_list_dialog.py
+      • auto_approve\settings_dialog.py
+      • auto_approve\settings_dialog.py
+      • auto_approve\settings_dialog.py
+      • auto_approve\ui_optimizer.py
+    - _on_performance_alert(self, alert_type, value)
+      • main_auto_approve_refactored.py
+      • tests\test_gui_responsiveness.py
+
+📋 重复代码块检查:
+  ❌ 发现 56 个重复代码块:
+    - 代码块 40487182 (3 处重复):
+      • main_auto_approve_refactored.py (行 1021-1023)
+      • examples\multithreading_demo.py (行 498-500)
+      • tests\test_multithreading_architecture.py (行 464-466)
+    - 代码块 fa263894 (2 处重复):
+      • auto_approve\gui_performance_monitor.py (行 47-49)
+      • auto_approve\gui_responsiveness_manager.py (行 45-47)
+    - 代码块 adebfe99 (2 处重复):
+      • auto_approve\scanner_process_adapter.py (行 29-33)
+      • auto_approve\scanner_worker_refactored.py (行 45-49)
+
+📦 未使用导入检查:
+  ⚠️  发现 1 个未使用的导入:
+    - utils\__init__.py: *
+
+📊 导入使用率分析:
+  ✅ 导入使用率良好
+
+📊 项目统计:
+  - 分析文件数: 83
+  - 函数总数: 848
+  - 代码块总数: 2804
+  - 重复函数: 83
+  - 重复代码块: 56

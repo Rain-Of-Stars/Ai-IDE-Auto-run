@@ -1,0 +1,53 @@
+============================================================
+项目依赖分析报告
+============================================================
+
+📊 统计信息:
+  - 分析文件数: 72
+  - 总导入数: 544
+  - 第三方库: 18
+  - 标准库: 28
+  - 本地模块: 13
+
+📦 第三方库使用情况:
+  - PySide6: 28 次
+  - numpy: 23 次
+  - cv2: 17 次
+  - psutil: 11 次
+  - qasync: 3 次
+  - windows_capture: 3 次
+  - atexit: 2 次
+  - argparse: 2 次
+  - concurrent: 1 次
+  - platform: 1 次
+  - weakref: 1 次
+  - inspect: 1 次
+  - PIL: 1 次
+  - copy: 1 次
+  - asyncio: 1 次
+  - aiohttp: 1 次
+  - websockets: 1 次
+  - requests: 1 次
+
+🔧 requirements.txt 一致性检查:
+  ❌ 使用但未声明的包:
+    - argparse
+    - asyncio
+    - atexit
+    - concurrent
+    - copy
+    - inspect
+    - platform
+    - weakref
+
+🏗️  常用标准库:
+  - time: 50 次
+  - os: 46 次
+  - typing: 43 次
+  - sys: 35 次
+  - threading: 21 次
+  - dataclasses: 19 次
+  - traceback: 17 次
+  - json: 13 次
+  - pathlib: 12 次
+  - ctypes: 11 次

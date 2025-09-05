@@ -21,6 +21,8 @@ Windows Graphics Capture (WGC) 统一捕获包
 from .wgc_backend import WGCCaptureSession
 from .capture_manager import CaptureManager
 from .monitor_utils import enum_windows, get_monitor_handles, get_primary_monitor, get_all_monitors_info
+from .shared_frame_cache import get_shared_frame_cache, cleanup_shared_frame_cache
+from .cache_manager import get_global_cache_manager, cleanup_global_cache_manager
 
 __all__ = [
     'WGCCaptureSession',
@@ -28,7 +30,11 @@ __all__ = [
     'enum_windows',
     'get_monitor_handles',
     'get_primary_monitor',
-    'get_all_monitors_info'
+    'get_all_monitors_info',
+    'get_shared_frame_cache',
+    'cleanup_shared_frame_cache',
+    'get_global_cache_manager',
+    'cleanup_global_cache_manager'
 ]
 
 __version__ = '1.0.0'

@@ -1,0 +1,37 @@
+============================================================
+项目冲突分析报告
+============================================================
+
+🔄 循环导入检查:
+  ✅ 未发现循环导入
+
+📛 命名冲突检查:
+  ⚠️  函数名冲突 (82):
+    - main: main_auto_approve_refactored.py, examples\multithreading_demo.py, tests\demo_process_scanner.py, tests\simple_performance_test.py, tests\simple_process_test.py, tests\test_conflict_analysis.py, tests\test_dependency_analysis.py, tests\test_gui_basic.py, tests\test_gui_responsiveness.py, tests\test_memory_optimization.py, tests\test_memory_optimization_cross_platform.py, tests\test_memory_optimization_simple.py, tests\test_real_capture.py, tests\test_scanner_process.py, tests\test_simple.py, tests\test_system_status.py, tests\verify_process_implementation.py, tools\convert_png_to_ico.py, tools\fix_monitor_config.py, tools\fix_scanner_process_hang.py, tools\fix_wgc_hwnd.py, tools\main_performance_optimizer.py, tools\performance_diagnostic.py, tools\performance_guardian.py, tools\smoke_import_test.py, tools\ui_startup_lag_diagnosis.py, tools\verify_wgc.py, tools\wgc_diagnostic_tool.py
+    - __init__: main_auto_approve_refactored.py, main_auto_approve_refactored.py, main_auto_approve_refactored.py, main_auto_approve_refactored.py, auto_approve\app_state.py, auto_approve\config_optimizer.py, auto_approve\config_optimizer.py, auto_approve\gui_performance_monitor.py, auto_approve\gui_responsiveness_manager.py, auto_approve\hwnd_picker.py, auto_approve\hwnd_picker.py, auto_approve\hwnd_picker.py, auto_approve\hwnd_picker.py, auto_approve\performance_config.py, auto_approve\performance_monitor.py, auto_approve\performance_monitor.py, auto_approve\performance_optimizer.py, auto_approve\performance_optimizer.py, auto_approve\performance_optimizer.py, auto_approve\scanner_process_adapter.py, auto_approve\scanner_process_adapter.py, auto_approve\scanner_worker_refactored.py, auto_approve\scanner_worker_refactored.py, auto_approve\screen_list_dialog.py, auto_approve\settings_dialog.py, auto_approve\settings_dialog.py, auto_approve\settings_dialog.py, auto_approve\settings_dialog.py, auto_approve\settings_dialog.py, auto_approve\settings_dialog.py, auto_approve\settings_dialog.py, auto_approve\ui_optimizer.py, auto_approve\ui_optimizer.py, auto_approve\ui_optimizer.py, auto_approve\ui_optimizer.py, auto_approve\wgc_preview_dialog.py, capture\cache_manager.py, capture\capture_manager.py, capture\shared_frame_cache.py, capture\wgc_backend.py, examples\multithreading_demo.py, tests\demo_process_scanner.py, tests\test_conflict_analysis.py, tests\test_dependency_analysis.py, tests\test_gui_responsiveness.py, tests\test_scanner_process.py, tools\performance_diagnostic.py, tools\performance_guardian.py, tools\performance_guardian.py, tools\performance_guardian.py, tools\performance_guardian.py, tools\performance_monitor.py, tools\ui_startup_lag_diagnosis.py, utils\memory_config_manager.py, utils\memory_debug_manager.py, utils\memory_optimization_manager.py, utils\memory_performance_monitor.py, utils\memory_template_manager.py, utils\performance_profiler.py, workers\async_tasks.py, workers\cpu_tasks.py, workers\io_tasks.py, workers\io_tasks.py, workers\io_tasks.py, workers\io_tasks.py, workers\io_tasks.py, workers\io_tasks.py, workers\io_tasks.py, workers\io_tasks.py, workers\io_tasks.py, workers\scanner_process.py, workers\scanner_process.py
+    - __enter__: main_auto_approve_refactored.py, capture\capture_manager.py, capture\wgc_backend.py
+    - __exit__: main_auto_approve_refactored.py, capture\capture_manager.py, capture\wgc_backend.py
+    - _on_performance_alert: main_auto_approve_refactored.py, tests\test_gui_responsiveness.py
+  ⚠️  类名冲突 (5):
+    - PerformanceMetrics: auto_approve\performance_monitor.py, tools\performance_monitor.py, utils\memory_performance_monitor.py
+    - PerformanceStats: auto_approve\performance_optimizer.py, utils\performance_profiler.py
+    - POINT: auto_approve\win_clicker.py, utils\win_dpi.py
+    - RECT: auto_approve\win_clicker.py, capture\monitor_utils.py, utils\win_dpi.py
+    - MockNumpy: tests\test_memory_optimization_cross_platform.py, tests\test_memory_optimization_simple.py
+  ⚠️  文件名冲突 (2):
+    - performance_monitor.py: auto_approve\performance_monitor.py, tools\performance_monitor.py
+    - __init__.py: auto_approve\__init__.py, capture\__init__.py, utils\__init__.py
+
+📡 信号连接检查:
+  ⚠️  可能的信号冲突 (19):
+    - loggingChanged.connect: main_auto_approve_refactored.py, auto_approve\app_state.py, auto_approve\settings_dialog.py, tools\smoke_import_test.py
+    - performance_alert.connect: main_auto_approve_refactored.py, tests\test_gui_responsiveness.py
+    - responsiveness_changed.connect: main_auto_approve_refactored.py, tests\test_gui_responsiveness.py
+    - triggered.connect: main_auto_approve_refactored.py, main_auto_approve_refactored.py, main_auto_approve_refactored.py, main_auto_approve_refactored.py, main_auto_approve_refactored.py
+    - sig_status.connect: main_auto_approve_refactored.py, tests\demo_process_scanner.py
+
+📊 项目统计:
+  - 模块数: 74
+  - 函数数: 712
+  - 类数: 116
+  - 全局变量数: 82

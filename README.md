@@ -1,718 +1,421 @@
-# AI-IDE-Auto-Run
-
-[![Python](https://img.shields.io/badge/Python-3.12%2B-blue.svg)](https://www.python.org/)
-[![PySide6](https://img.shields.io/badge/PySide6-6.7.2%2B-green.svg)](https://pypi.org/project/PySide6/)
-[![OpenCV](https://img.shields.io/badge/OpenCV-4.10%2B-red.svg)](https://opencv.org/)
-[![License](https://img.shields.io/badge/License-Educational-yellow.svg)](#-许可证)
-[![Version](https://img.shields.io/badge/Version-V4.1-brightgreen.svg)](#)
-
-基于PySide6开发的Windows智能自动化工具，专为AI IDE环境设计，能够自动识别并点击各种AI开发工具中的确认按钮，如Trae IDE的"继续"、Windsurf的"Run"、Cursor的"Approve"等，实现真正的无感自动化操作。
-
-## 📋 目录
-
-- [✨ 核心亮点](#-核心亮点)
-- [🌟 主要特性](#-主要特性)
-- [📦 安装要求](#-安装要求)
-- [🔧 WGC捕获修复](#-wgc捕获修复)
-- [🚀 快速开始](#-快速开始)
-- [🎯 WGC捕获技术详解](#-wgc捕获技术详解)
-- [⚙️ 配置说明](#️-配置说明)
-- [🛠️ 项目架构](#️-项目架构)
-- [🔧 工具脚本](#-工具脚本)
-- [🐛 故障排除](#-故障排除)
-- [📝 开发说明](#-开发说明)
-- [📄 许可证](#-许可证)
-- [🤝 贡献指南](#-贡献指南)
-- [📞 技术支持](#-技术支持)
-
-## ✨ 核心亮点
-
-### 🎯 智能识别
-- **多模板支持**：同时识别多种按钮样式，适配不同AI IDE界面
-- **高精度匹配**：基于OpenCV模板匹配算法，支持多尺度检测
-- **自适应阈值**：可调节匹配精度，平衡准确性与响应速度
-
-### 🖱️ 无感操作
-- **零干扰点击**：使用Windows消息机制，不移动系统鼠标
-- **后台运行**：不影响正常的键盘输入和鼠标操作
-- **智能冷却**：防止频繁误点击，可设置点击间隔
-
-### 🖥️ 多屏支持
-- **全屏幕覆盖**：支持多显示器环境，可指定监控特定屏幕
-- **坐标自动校正**：智能处理多屏幕坐标转换
-- **屏幕轮询**：可在多个屏幕间轮流扫描
-
-### 🎨 现代界面
-- **托盘常驻**：最小化到系统托盘，不占用任务栏空间
-- **单实例运行**：防止重复启动，二次启动自动唤起设置窗口
-- **自定义通知**：支持自定义图标的系统通知
-- **现代化UI**：采用扁平化设计，支持高DPI显示
-
-<img width="862" height="592" alt="主界面截图" src="https://github.com/user-attachments/assets/b4f1a22f-a436-4f7b-85b8-a011bc814ed2" />
-
-### 📊 智能配置
-- **可视化设置**：图形化配置界面，支持实时预览
-- **配置持久化**：JSON格式保存，支持导入导出
-- **截图添加**：内置截图工具，直接框选目标区域
-- **路径智能解析**：支持相对路径，便于项目迁移
-
-<img width="862" height="592" alt="设置界面" src="https://github.com/user-attachments/assets/6c25b4a1-1935-44a3-be84-17ffe1001b95" />
-
-### 🔧 高级功能
-- **纯WGC捕获**：基于Windows Graphics Capture API，禁用PrintWindow回退
-- **严格RowPitch处理**：逐行拷贝避免畸变，支持64/256字节对齐
-- **ContentSize监控**：尺寸变化时自动重建FramePool，避免未定义区域
-- **DPI感知**：Per Monitor V2 DPI感知，支持多缩放比例环境
-- **调试模式**：详细日志记录，支持调试图片保存
-- **性能优化**：ROI区域限制，灰度匹配加速，硬件加速捕获
-- **容错机制**：自动重试，异常恢复，最小化窗口无感恢复
-
-<img width="862" height="592" alt="多屏幕支持" src="https://github.com/user-attachments/assets/1d551324-2cde-4e72-b9de-983171f1b217" />
-
-### 📢 智能通知
-- **自定义图标**：支持自定义通知图标
-- **状态反馈**：实时显示运行状态和匹配结果
-- **静默模式**：可关闭通知，纯后台运行
-
-<img width="378" height="118" alt="通知示例" src="https://github.com/user-attachments/assets/629c3f97-9d41-493e-a6fd-e48684cbcbdc" />
-
-## 🌟 主要特性
-
-### 核心功能
-- **多模板识别**：支持同时加载多个模板图片，识别不同类型的按钮
-- **无感点击**：使用Windows消息机制，不移动系统鼠标，不打断当前操作
-- **多屏幕支持**：支持多显示器环境，可指定监控特定屏幕
-- **智能匹配**：基于OpenCV模板匹配，支持多尺度检测和灰度匹配
-- **托盘常驻**：后台运行，通过系统托盘进行控制
-- **单实例运行**：通过QLocalServer保证仅运行一个实例，再次启动会唤起设置窗口
-- **ROI区域限制**：可设置感兴趣区域，提高检测效率
-- **点击冷却**：防止频繁误点击，可设置点击间隔
-- **调试模式**：提供详细的调试信息和坐标验证
-- **配置持久化**：所有设置保存为JSON文件，重启后自动恢复
-- **日志记录**：可选的文件日志功能，记录运行状态
-- **WGC捕获技术**：基于Windows Graphics Capture API，支持硬件加速应用的稳定捕获
-
-### 最新功能 (V4.1 - 增强版)
-- **纯WGC实现**：完全基于Windows Graphics Capture API，移除所有传统截屏方案
-- **硬件加速捕获**：支持VSCode等硬件加速应用在后台/遮挡/最大化时的稳定捕获
-- **Per Monitor V2 DPI感知**：正确处理不同缩放比例下的坐标转换
-- **RowPitch正确处理**：避免D3D11纹理的图像变形和斜切问题
-- **性能优化**：帧率控制、缓冲管理、AcquireLatestFrame语义
-- **相对路径支持**：模板图片支持相对路径配置，便于项目迁移
-- **简化配置**：统一的WGC捕获模式，窗口捕获和显示器捕获两种选择
-- **重复文件检查**：自动检测重复模板图片，避免冗余存储
-- **现代化图标系统**：程序化生成高DPI图标，支持自定义通知图标
-- **UI增强管理器**：提供动画效果、阴影效果、平滑滚动等现代UI体验
-- **全局状态管理**：统一的应用状态中心，实现跨模块状态同步
-- **Python 3.12兼容性**：完整支持Python 3.12.11，提供兼容性测试脚本
-- **透明图标通知**：支持无标题图标的系统通知，提升用户体验
-- **AppUserModelID设置**：正确的Windows通知归属，避免显示为"Python"
-- **智能错误恢复**：自动检测和恢复常见的运行时错误
-- **多语言支持**：支持中英文界面切换（实验性功能）
-
-## 📦 安装要求
-
-### 开发环境
-- **操作系统**：Windows 10/11
-- **Python版本**：Python 3.12+ (推荐 3.12.11)
-- **架构支持**：x64
-
-### 核心依赖
-```
-PySide6>=6.7.2,<7                    # Qt6 GUI框架
-opencv-python-headless>=4.10.0.84,<5 # 图像处理和模板匹配
-numpy>=2.1,<3                        # 数值计算
-windows-capture-python>=1.0.0        # Windows Graphics Capture API（必需）
-winrt-runtime>=2.0.0                 # Windows Runtime支持（必需）
-```
-
-### 安装步骤
-1. **克隆项目**：
-   ```bash
-   git clone https://github.com/your-username/AI_IDE_Auto_Run_github_main_V4.1.git
-   cd AI_IDE_Auto_Run_github_main_V4.1
-   ```
-
-2. **安装依赖**：
-   ```bash
-   # Python 3.13用户
-   pip install -r requirements.txt
-
-   # Python 3.12用户（推荐）
-   pip install -r requirements_python312.txt
-   ```
-
-3. **验证安装**：
-   ```bash
-   python test/compatibility_test.py  # 检查兼容性
-   python test/functional_test.py     # 功能测试
-   python tools/verify_wgc.py          # 验证WGC修复效果
-   ```
-
-## 🔧 WGC捕获修复
-
-### 修复内容
-本版本彻底修复了VSCode最大化/缩放变化时的WGC捕获畸变问题：
-
-- **✅ 严格RowPitch处理**：逐行拷贝避免图像斜切，支持64/256字节对齐
-- **✅ ContentSize监控**：尺寸变化时自动重建FramePool，避免未定义区域
-- **✅ 禁用PrintWindow回退**：强制WGC，确保捕获质量一致性
-- **✅ 最小化窗口处理**：自动恢复到非激活显示状态
-
-### 验证方法
-使用内置验证工具测试修复效果：
-```bash
-python tools/verify_wgc.py
-```
-
-该工具将：
-- 自动查找VSCode窗口
-- 测试窗口化/最大化状态切换
-- 验证ContentSize变化处理
-- 检查RowPitch是否正确
-- 生成测试截图到`artifacts/`目录
-
-### 注意事项
-- **系统要求**：Windows 10 1903+ 和支持WGC的显卡驱动
-- **最小化限制**：Windows系统限制，最小化状态下无法更新窗口内容（正常行为）
-- **DPI建议**：启用Per Monitor V2 DPI感知以获得最佳效果
-
-## 🚀 快速开始
-
-### 基本使用流程
-1. **启动程序**：
-   ```bash
-   python main_auto_approve.py
-   ```
-
-2. **配置模板**：
-   - 右键托盘图标 → **设置**
-   - 点击**添加模板**或**截图添加**
-   - 选择或截取要识别的按钮图片
-
-3. **开始监控**：
-   - 右键托盘图标 → **开始扫描**
-   - 程序将自动监控并点击匹配的按钮
-
-4. **查看状态**：
-   - 双击托盘图标打开设置窗口
-   - 右键菜单查看运行状态
-   - 可选启用日志记录详细信息
-
-### 模板图片准备指南
-- **截图方式**：使用设置中的"截图添加"功能，直接框选目标区域
-- **图片格式**：推荐PNG格式，确保图片清晰
-- **内容要求**：包含按钮的完整内容，避免包含过多背景
-- **多样性**：针对不同屏幕分辨率和主题准备多个版本
-
-### 预置模板
-项目已包含常用AI IDE按钮模板：
-- `approve_pix.png` - 通用同意按钮
-- `continue.png` - 继续按钮
-- `Runeverytime.png` - 每次运行按钮
-- `Runthistime.png` - 本次运行按钮
-- `Runalt.png` - 运行按钮（备选样式）
-- `approve2.png`, `approve3.png` - 其他同意按钮样式
-
-## 🎯 WGC捕获技术详解
-
-本项目基于 Windows Graphics Capture (WGC) API 提供高性能的屏幕捕获功能，支持两种捕获模式：
-
-### 1. 窗口捕获模式 (Window Capture)
-**技术实现**：直接捕获指定窗口的内容
-
-**优势**：
-- ✅ **高性能**：直接捕获目标窗口，无需处理整个屏幕
-- ✅ **抗遮挡**：即使窗口被遮挡也能正常捕获内容
-- ✅ **支持最小化**：可以捕获最小化窗口的内容
-- ✅ **硬件加速**：支持GPU加速的现代应用程序
-- ✅ **精确定位**：直接针对目标应用，避免误检测
-
-**适用场景**：
-- 针对特定应用程序的自动化（如VSCode、Chrome等）
-- 需要高性能捕获的场景
-- 窗口经常被遮挡的环境
-- 现代 Electron 应用程序
-
-### 2. 显示器捕获模式 (Monitor Capture)
-**技术实现**：捕获整个显示器或指定区域的内容
-
-**优势**：
-- ✅ **兼容性强**：适用于所有类型的应用程序和窗口
-- ✅ **配置简单**：只需指定显示器索引和ROI区域
-- ✅ **多应用支持**：可以检测跨多个应用的按钮
-- ✅ **硬件加速**：基于WGC的高性能实现
-
-**适用场景**：
-- 多窗口环境下的通用按钮检测
-- 不确定目标窗口句柄的情况
-- 需要检测跨多个应用的按钮
-- 系统级界面元素检测
-
-### 技术优势
-- **Per Monitor V2 DPI感知**：正确处理不同缩放比例下的坐标转换
-- **RowPitch正确处理**：避免D3D11纹理的图像变形和斜切问题
-- **性能优化**：帧率控制、缓冲管理、AcquireLatestFrame语义
-- **系统兼容性**：需要Windows 10 1903+版本
-
-## ⚙️ 配置说明
-
-### 基本设置
-- **模板路径**：要识别的按钮图片文件路径（支持相对路径）
-- **多模板支持**：可同时配置多个模板图片
-- **监视器索引**：指定要监控的屏幕（1=第一个屏幕，2=第二个屏幕...）
-- **扫描间隔**：每次扫描的时间间隔（毫秒）
-- **匹配阈值**：模板匹配的相似度阈值（0.0-1.0）
-
-### WGC捕获设置
-- **捕获模式**：选择捕获方式（`window`=窗口捕获，`monitor`=显示器捕获）
-- **目标窗口句柄**：窗口捕获模式的目标窗口HWND（十进制数字）
-- **目标窗口标题**：通过窗口标题自动查找目标窗口
-- **窗口标题部分匹配**：是否允许窗口标题的部分匹配
-- **目标进程**：通过进程名或路径查找目标窗口
-- **捕获帧率上限**：WGC捕获的最大FPS（1-60）
-- **捕获超时时间**：单次捕获的超时时间（毫秒）
-- **自动恢复最小化窗口**：是否自动恢复最小化的目标窗口（不激活）
-- **捕获后重新最小化**：捕获完成后是否重新最小化窗口
-- **启用Electron优化**：为Electron应用提供优化建议
-
-### 高级设置
-- **ROI区域**：限制扫描的屏幕区域（x, y, width, height）
-- **点击冷却**：两次点击之间的最小间隔（秒）
-- **灰度匹配**：是否使用灰度图像进行匹配（提高性能）
-- **多尺度检测**：支持不同缩放比例的按钮识别
-- **点击偏移**：相对于匹配位置的点击偏移量
-- **调试模式**：启用详细日志和调试图片保存
-- **自动启动扫描**：程序启动后自动开始扫描
-
-### 多屏幕设置
-- **坐标校正**：自动校正多屏幕环境下的坐标
-- **增强窗口查找**：提高窗口定位的准确性
-- **屏幕轮询**：在多个屏幕间轮流扫描
-  - 对应配置：`enable_multi_screen_polling` 与 `screen_polling_interval_ms`
-
-### 配置文件
-配置保存在 `config.json` 文件中，可以手动编辑或通过设置界面修改。
-为兼容旧版本：当配置中的模板路径文件不存在时，程序会自动在`assets/images/`下按同名文件回退查找。
-
-## 🛠️ 项目架构
-
-### 目录结构
-```
-AI_IDE_Auto_Run_github_main_V4.1/
-├── main_auto_approve.py        # 主程序入口
-├── main_performance_optimizer.py # 性能优化器入口
-├── auto_approve/               # 核心代码包
-│   ├── __init__.py
-│   ├── config_manager.py       # 配置管理
-│   ├── logger_manager.py       # 日志管理
-│   ├── path_utils.py           # 路径工具
-│   ├── scanner_worker.py       # WGC扫描线程
-│   ├── settings_dialog.py      # 设置对话框
-│   ├── screen_list_dialog.py   # 屏幕列表
-│   ├── wgc_capture.py          # 旧版WGC实现（已弃用）
-│   ├── hwnd_picker.py          # 窗口句柄选择器
-│   ├── win_clicker.py          # Windows无感点击
-│   ├── app_state.py            # 全局状态管理
-│   ├── menu_icons.py           # 菜单图标管理
-│   ├── ui_enhancements.py      # UI增强管理器
-│   ├── config_optimizer.py     # 配置优化器
-│   ├── performance_monitor.py  # 性能监控
-│   ├── performance_optimizer.py # 性能优化器
-│   └── wgc_preview_dialog.py   # WGC预览对话框
-├── capture/                    # 统一WGC捕获包
-│   ├── __init__.py
-│   ├── wgc_backend.py          # WGC后端实现
-│   ├── capture_manager.py      # 捕获管理器
-│   └── monitor_utils.py        # 显示器枚举工具
-├── utils/                      # 工具包
-│   └── win_dpi.py              # DPI感知和坐标转换
-├── assets/                     # 资源文件
-│   ├── images/                 # 模板图片
-│   ├── styles/
-│   │   └── modern_flat.qss     # 现代化样式
-│   └── icons/
-│       └── icons/
-│           └── custom_icon.ico # 自定义图标
-├── tools/                      # 诊断与开发工具
-│   ├── convert_png_to_ico.py   # PNG转ICO工具
-│   ├── fix_monitor_config.py   # 显示器配置修复工具
-│   ├── fix_wgc_hwnd.py         # WGC句柄修复
-│   ├── performance_fix.py      # 性能修复工具
-│   ├── smoke_import_test.py    # 无界面导入测试
-│   ├── verify_wgc.py           # WGC验证工具
-│   └── wgc_diagnostic_tool.py  # WGC诊断工具
-├── test/                       # 测试文件
-│   ├── compatibility_test.py   # 兼容性测试
-│   ├── functional_test.py      # 功能测试
-│   ├── simple_test.py          # 简单测试
-│   ├── test_import_paths.py    # 导入路径测试
-│   ├── test_capture_button.py  # 捕获按钮测试
-│   ├── test_monitor_wgc.py     # WGC显示器测试
-│   ├── test_wgc_fix.py         # WGC修复测试
-│   ├── demo_capture_changes.py # 捕获功能演示
-│   ├── verify_changes.py       # 代码修改验证
-│   ├── verify_fix.py           # 修复效果验证
-│   ├── simple_monitor_test.py  # 简化显示器测试
-│   ├── verify_performance.py   # 性能验证
-│   ├── test_*.py               # 各种单元测试
-│   └── test_wgc_only.py        # WGC专用测试
-├── docs/                       # 文档文件
-│   ├── CHANGELOG.md            # 更新日志
-│   ├── WGC_REFACTOR_SUMMARY.md # WGC重构总结
-│   ├── WGC_TROUBLESHOOTING.md  # WGC故障排除
-│   ├── CAPTURE_BUTTON_CHANGES.md # 捕获按钮变更说明
-│   ├── WGC_显示器索引修复报告.md # WGC显示器索引修复报告
-│   ├── MENU_UI_IMPROVEMENTS.md # 菜单UI改进
-│   ├── CPU性能优化解决方案.md    # CPU性能优化
-│   ├── WGC_CLEANUP_REPORT.md   # WGC清理报告
-│   └── 项目结构优化报告.md       # 项目结构优化报告
-├── reports/                    # 报告文件
-│   └── capture_audit.md        # 捕获审计报告
-├── artifacts/                  # 生成文件和构建产物
-├── config.json                 # 应用配置
-├── requirements.txt            # Python 3.13依赖
-├── requirements_python312.txt  # Python 3.12依赖
-└── README.md                   # 项目说明文档
-```
-
-### 核心模块说明
-
-#### main_auto_approve.py
-- 程序主入口，实现系统托盘功能
-- 管理扫描线程的启动和停止
-- 提供用户交互界面和菜单
-- 采用QLocalServer/QLocalSocket实现单实例运行
-- 支持自定义图标通知和现代化UI主题
-
-#### scanner_worker.py
-- 屏幕扫描核心逻辑，基于WGC统一捕获后端
-- 支持窗口捕获和显示器捕获两种模式
-- OpenCV模板匹配算法，支持多尺度和多模板
-- 智能坐标校正和多屏幕支持
-
-#### win_clicker.py
-- Windows平台的无感点击实现
-- 使用PostMessage发送鼠标消息
-- 支持多屏幕坐标转换和窗口验证
-
-#### config_manager.py
-- 配置文件的加载和保存（JSON格式）
-- 默认配置管理和数据类型定义
-- 支持相对路径解析和向后兼容
-
-#### settings_dialog.py
-- 现代化图形设置界面，支持所有配置项
-- 内置截图工具和模板管理
-- 实时预览和验证功能
-- 重复文件检查和路径智能处理
-
-#### wgc_capture.py
-- Windows Graphics Capture (WGC) 窗口级捕获
-- 支持WGC优先，PrintWindow API回退
-- 处理最小化窗口的无激活恢复
-- 包含Electron应用检测和优化
-
-#### app_state.py
-- 全局应用状态管理中心
-- 统一维护日志状态，提供Qt信号同步
-- 避免跨模块状态不一致问题
-
-#### ui_enhancements.py
-- UI增强管理器，提供现代化交互效果
-- 支持动画效果、阴影效果、平滑滚动
-- 按钮悬停效果和渐变动画
-
-### 工作流程图
+# AI‑IDE‑Auto‑Run 内存与性能优化系统（Windows WGC 专用）
+
+AI‑IDE‑Auto‑Run 是一款基于 PySide6 的系统托盘小工具，用于在 Windows 上通过 Windows Graphics Capture（WGC）对指定窗口/显示器进行帧捕获，并在检测到模板匹配时自动执行点击操作。项目强调“不卡 UI”的多线程/多进程架构与内存、性能治理：
+- UI 主线程仅负责渲染与轻逻辑，IO 走 `QThreadPool`，CPU 密集任务用 `multiprocessing` 独立进程；
+- 可选 `qasync` 接入异步事件循环；
+- 提供 GUI 响应性管理、性能监控与节流优化；
+- 内存模板缓存与调试图像内存化，显著减少磁盘 IO；
+- WGC 后端严格实现（ContentSize/RowPitch/FramePool 重建），禁止退回 PrintWindow。
+
+
+## 功能特性
+- 托盘应用：开箱即用的系统托盘菜单，状态可视、操作直达；
+- 两种捕获目标：窗口（`window`）与显示器（`monitor`）；
+- 模板匹配自定义：支持单模板与多模板、灰度/多尺度、阈值、冷却时间与最小命中帧数；
+- 自动句柄更新：按进程名自动更新目标 HWND，窗口重启无感恢复；
+- 多线程/多进程：UI、IO、CPU 分层解耦，关键路径全程非阻塞；
+- GUI 响应性守护：批处理 UI 更新、响应性检测、节流与优先级；
+- 性能监控：CPU/内存/FPS/事件循环延迟告警；
+- 内存优化：模板与调试图像内存缓存，减少反复读取与写入；
+- 丰富工具：WGC 修复验证、启动卡顿诊断、配置修复等脚本。
+
+
+## 项目结构
+- `main_auto_approve_refactored.py`：主入口（托盘程序、菜单、线程/进程初始化、主题/样式加载）
+- `auto_approve/`：应用核心模块
+  - `config_manager.py`：配置加载/保存、默认与迁移
+  - `scanner_process_adapter.py`：进程版扫描器适配，信号桥接到 UI
+  - `auto_hwnd_updater.py`：按进程名自动更新 HWND
+  - `gui_responsiveness_manager.py`：GUI 响应性守护与批处理
+  - `gui_performance_monitor.py`：GUI 性能监控与告警
+  - 其他：菜单图标、UI 优化器、设置对话框等
+- `workers/`：并发基础设施
+  - `io_tasks.py`：IO 任务线程池与提交接口
+  - `cpu_tasks.py`：CPU 任务多进程管理器
+  - `scanner_process.py`：独立扫描进程（捕获→匹配→点击）
+- `capture/`：WGC 捕获实现与共享帧缓存
+  - `wgc_backend.py`：严格 WGC 实现（ContentSize/RowPitch/FramePool）
+  - `capture_manager.py`、`monitor_utils.py` 等
+- `utils/`：DPI、内存与性能工具库
+  - `memory_template_manager.py`、`memory_debug_manager.py`、`memory_config_manager.py`
+  - `memory_optimization_manager.py`、`performance_profiler.py`、`bounded_latest_queue.py`
+- `tools/`：诊断/修复/优化脚本（见“工具脚本”一节）
+- `assets/`：QSS 样式与图片、图标
+- `docs/`：WGC 黑屏/卡死问题诊断与修复文档
+- `tests/`：测试与分析脚本（前缀为 `test_`）
+
+
+## 架构与流程
 ```mermaid
 graph TD
-    A[启动程序] --> B[加载配置 config.json]
-    B --> C[设置Per Monitor V2 DPI感知]
-    C --> D[初始化托盘与UI]
-    D --> E[选择WGC捕获模式]
-    E --> F{使用显示器模式?}
-    F -- 是 --> G[WGC显示器捕获]
-    F -- 否 --> H[WGC窗口捕获]
-    G --> I[正确处理RowPitch]
-    H --> I
-    I --> J[BGRA到BGR转换]
-    J --> K[模板匹配检测]
-    K --> L{匹配度>=阈值?}
-    L -- 否 --> M[等待扫描间隔]
-    L -- 是 --> N[计算点击坐标]
-    N --> O[DPI感知坐标转换]
-    O --> P[无感点击]
-    P --> Q[冷却期/记录日志]
-    Q --> M
-    M --> K
+    A[启动] --> B[初始化 Qt 应用/主题]
+    B --> C[托盘与菜单创建]
+    C --> D[初始化线程/进程与 qasync]
+    D --> E[GUI 响应性与性能监控]
+    E --> F{开始扫描?}
+    F -- 是 --> G[选择后端: 进程/线程]
+    G --> H[WGC 捕获帧]
+    H --> I[模板匹配]
+    I -- 命中 --> J[点击(偏移/冷却/验证)]
+    I -- 未命中 --> K[循环等待 interval_ms]
+    J --> K
+    K --> L[状态/提示 通过信号回主线程]
+    L --> F
 ```
 
-## 🔧 工具脚本
 
-### 诊断工具
-- **tools/wgc_diagnostic_tool.py**：WGC诊断工具，检测捕获问题
-- **tools/fix_monitor_config.py**：显示器配置修复工具，解决多屏幕问题
-- **tools/performance_fix.py**：性能修复工具，优化系统性能
-- **tools/convert_png_to_ico.py**：PNG转ICO格式工具，用于自定义图标
-- **tools/verify_wgc.py**：WGC验证工具，测试捕获功能
-
-### 测试工具
-- **test/compatibility_test.py**：检查Python版本和依赖兼容性
-- **test/functional_test.py**：验证核心功能模块
-- **test/simple_test.py**：简单功能测试
-- **tools/smoke_import_test.py**：快速导入测试，验证模块完整性
-
-### 使用方法
-```bash
-# WGC诊断
-python tools/wgc_diagnostic_tool.py
-
-# 修复显示器配置
-python tools/fix_monitor_config.py
-
-# 性能修复
-python tools/performance_fix.py
-
-# 验证WGC功能
-python tools/verify_wgc.py
-
-# 兼容性检查
-python test/compatibility_test.py
-
-# 功能测试
-python test/functional_test.py
-
-# 简单测试
-python test/simple_test.py
-
-# 快速导入测试
-python tools/smoke_import_test.py
-```
-
-## 🐛 故障排除
-
-### 常见问题及解决方案
-
-#### 1. 无法识别按钮
-**症状**：程序运行但不点击目标按钮
-
-**解决方案**：
-- 检查模板图片是否清晰完整
-- 调整匹配阈值（降低threshold值到0.7-0.8）
-- 启用调试模式查看匹配结果
-- 尝试不同的缩放比例（启用multi_scale）
-- 使用截图工具重新截取模板
-
-#### 2. 多屏幕环境下点击位置不准确
-**症状**：识别正确但点击位置偏移
-
-**解决方案**：
-```bash
-# 运行诊断工具
-python tools/diagnose_multiscreen_click.py
-
-# 自动修复配置
-python tools/fix_multiscreen_config.py
-```
-- 检查监视器索引设置是否正确
-- 启用坐标校正功能
-- 验证屏幕分辨率和缩放设置
-
-#### 3. 点击无效果
-**症状**：坐标正确但目标应用无响应
-
-**解决方案**：
-- 确认目标窗口支持PostMessage
-- 尝试不同的点击方法（在设置中切换）
-- 检查窗口权限和状态
-- 启用窗口验证功能
-- 对于特殊应用，尝试窗口级捕获模式
-
-#### 4. 性能问题
-**症状**：CPU占用过高或响应缓慢
-
-**解决方案**：
-- 设置合适的ROI区域，减少扫描范围
-- 调整扫描间隔（增加interval_ms值）
-- 启用灰度匹配（grayscale=true）
-- 减少模板数量，移除不必要的模板
-- 切换到窗口级捕获以提高性能
-
-#### 5. 窗口级捕获问题
-**症状**：WGC相关错误或捕获失败
-
-**解决方案**：
-```bash
-# 安装WGC依赖
-pip install windows-capture-python winrt-runtime
-```
-- **窗口句柄获取失败**：
-  - 使用任务管理器查看目标进程
-  - 尝试使用窗口标题自动查找
-  - 确保目标应用程序正在运行
-
-- **Electron应用捕获异常**：
-  - 添加启动参数：`--disable-features=CalculateNativeWinOcclusion`
-  - 在应用设置中关闭后台节流
-  - 增加捕获超时时间
-
-- **最小化窗口无法捕获**：
-  - 启用"自动恢复最小化窗口"选项
-  - 检查窗口是否支持无激活恢复
-  - 尝试使用PrintWindow回退模式
-
-#### 6. Python环境问题
-**症状**：导入错误或版本冲突
-
-**解决方案**：
-```bash
-# 检查兼容性
-python test/compatibility_test.py
-
-# Python 3.12用户使用专用依赖
-pip install -r requirements_python312.txt
-
-# 清理并重新安装
-pip uninstall opencv-python opencv-python-headless
-pip install opencv-python-headless>=4.10.0.84
-```
-
-### 调试模式使用
-启用调试模式可以获得详细的运行信息：
-
-1. **启用调试**：
-   - 在设置中启用"调试模式"
-   - 可选启用"保存调试图片"
-   - 设置调试图片保存目录
-
-2. **查看日志**：
-   - 启用文件日志功能
-   - 查看控制台输出
-   - 检查保存的调试图片
-
-3. **性能分析**：
-   - 观察匹配得分变化
-   - 检查坐标计算过程
-   - 验证WGC捕获模式
-
-### PowerShell UTF-8 终端配置
-避免中文乱码的终端设置：
+## 环境要求
+- Windows 10 及以上（建议 21H2/22H2）；
+- 开启 Windows Graphics Capture（系统支持自带，无需额外驱动）；
+- Python 3.12.11
+  
+## 安装与运行
+1) 创建/使用指定环境并安装依赖（PowerShell）：
 ```powershell
-$ErrorActionPreference='Stop';
-[Console]::InputEncoding = [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false;
-$env:PYTHONIOENCODING = 'utf-8';
-$PSDefaultParameterValues['Out-File:Encoding'] = 'utf8';
-"OK: UTF-8 configured"
+# 使用给定 Conda 环境的 Python 安装依赖
+python.exe -m pip install -r requirements.txt
 ```
 
-## 📝 开发说明
+2) 启动托盘程序：
+```powershell
+python.exe .\main_auto_approve_refactored.py
+```
 
-### 技术栈
-- **GUI框架**：PySide6 (Qt6) - 现代化跨平台GUI
-- **图像处理**：OpenCV - 高性能计算机视觉
-- **屏幕捕获**：Windows Graphics Capture (WGC) API - 硬件加速捕获
-- **系统交互**：Windows API (ctypes)
-- **DPI感知**：Per Monitor V2 DPI 感知和坐标转换
+启动成功后，系统托盘会出现应用图标，右键打开菜单进行操作与设置。
 
-### 架构设计原则
-- **模块化设计**：功能分离，便于维护和扩展
-- **线程安全**：UI线程与工作线程分离，避免界面卡顿
-- **配置驱动**：所有行为通过配置文件控制，灵活可调
-- **事件驱动**：基于Qt信号槽机制，松耦合设计
-- **向后兼容**：保持配置文件和API的向后兼容性
 
-### 扩展开发指南
-1. **添加新的点击方法**：
-   - 在 `win_clicker.py` 中实现新的点击函数
-   - 更新配置选项和设置界面
+## 快速上手
+- 准备模板图片：将目标按钮/图标的截屏放到 `assets/images/`（示例：`assets/images/approve2.png`、`assets/images/approve3.png`）。
+- 编辑 `config.json` 关键项：
+  - `template_path` 或 `template_paths`：单/多模板；
+  - `capture_backend`：`window`(窗口) 或 `monitor`(显示器)；
+  - `target_hwnd` 或 `target_process`：优先使用窗口句柄，其次进程名自动匹配；
+  - `interval_ms`：扫描间隔（数值越大越省电）；
+  - `threshold`：匹配阈值（0~1，建议 0.85~0.95）；
+  - `cooldown_s` 与 `min_detections`：降低误触发；
+  - `auto_start_scan`：启动后自动扫描；
+  - `enable_notifications`：系统通知开关。
+- 托盘菜单操作：
+  - “开始扫描/停止扫描”：互斥切换；
+  - “启用日志到 log.txt”：实时切换并持久化；
+  - “设置…”：图形化修改配置，保存后自动热更新并可自动启动扫描。
 
-2. **支持新的图像格式**：
-   - 修改 `scanner_worker.py` 中的图像加载逻辑
-   - 更新文件过滤器
+示例图片（模板示意）：
 
-3. **添加新的配置项**：
-   - 更新 `config_manager.py` 中的AppConfig类
-   - 在 `settings_dialog.py` 中添加对应的UI控件
+![approve2](assets\images\template_20250906_002631_846.png)
 
-4. **优化匹配算法**：
-   - 改进 `scanner_worker.py` 中的模板匹配逻辑
-   - 添加新的图像预处理方法
+> 提示：模板需来源与被扫描目标同缩放/DPI 环境，避免失配；可配合 `grayscale`、`multi_scale` 提升鲁棒性。
 
-### 代码规范
-- 使用中文注释，遵循PEP 8编码规范
-- 类型提示使用 `from __future__ import annotations`
-- 异常处理要具体，避免裸露的except
-- 日志记录使用统一的logger_manager
 
-## 📄 许可证
+## 配置说明（完整）
+配置文件为项目根目录的 `config.json`。若不存在会在首次运行时自动生成默认文件（见 `auto_approve/config_manager.py`）。未在 JSON 中显式设置的字段将使用内置默认值。
 
-本项目仅供学习和个人使用。请遵守相关法律法规，不要用于恶意用途。
+示例完整配置（默认值示意，不带注释）：
+```json
+{
+  "template_path": "assets/images/approve_pix.png",
+  "template_paths": [],
+  "monitor_index": 1,
+  "roi": {"x": 0, "y": 0, "w": 0, "h": 0},
+  "interval_ms": 800,
+  "threshold": 0.88,
+  "cooldown_s": 5.0,
+  "enable_logging": false,
+  "enable_notifications": true,
+  "grayscale": true,
+  "multi_scale": false,
+  "scales": [1.0, 1.25, 0.8],
+  "click_offset": [0, 0],
+  "min_detections": 1,
+  "auto_start_scan": true,
 
-## 🤝 贡献指南
+  "debug_mode": false,
+  "save_debug_images": false,
+  "debug_image_dir": "debug_images",
+  "enable_coordinate_correction": true,
+  "coordinate_offset": [0, 0],
+  "enhanced_window_finding": true,
+  "click_method": "message",
+  "verify_window_before_click": true,
+  "coordinate_transform_mode": "auto",
+  "enable_multi_screen_polling": false,
+  "screen_polling_interval_ms": 1000,
 
-欢迎提交Issue和Pull Request来改进这个项目：
+  "capture_backend": "window",
+  "use_monitor": false,
+  "target_hwnd": 0,
+  "target_window_title": "",
+  "window_title_partial_match": true,
+  "target_process": "",
+  "process_partial_match": true,
+  "fps_max": 30,
+  "capture_timeout_ms": 5000,
+  "restore_minimized_noactivate": true,
+  "restore_minimized_after_capture": false,
+  "enable_electron_optimization": true,
 
-1. **报告问题**：
-   - 提供详细的错误信息和复现步骤
-   - 附上系统环境和Python版本信息
-   - 如可能，提供调试日志
+  "include_cursor": false,
+  "border_required": false,
+  "window_border_required": false,
+  "screen_border_required": false,
+  "dirty_region_mode": "",
 
-2. **功能建议**：
-   - 描述具体的使用场景
-   - 说明预期的功能行为
-   - 考虑向后兼容性
+  "auto_update_hwnd_by_process": false,
+  "auto_update_hwnd_interval_ms": 5000
+}
+```
 
-3. **代码贡献**：
-   - Fork项目并创建功能分支
-   - 遵循现有的代码规范
-   - 添加必要的测试和文档
-   - 提交前运行兼容性测试
+字段分组与说明：
+- 目标与模式
+  - `capture_backend`(str)：捕获模式，`window`(窗口) 或 `monitor`(显示器)。兼容迁移：旧值 `screen/auto` 会被迁移为 `monitor`，`wgc` 迁移为 `window`；
+  - `use_monitor`(bool)：是否使用显示器模式；若未设置，会根据 `capture_backend` 推断；
+  - `target_hwnd`(int)：目标窗口句柄；优先级最高；
+  - `target_window_title`(str)：按标题查找目标窗口；
+  - `window_title_partial_match`(bool)：标题是否允许部分匹配；
+  - `target_process`(str)：按进程名/路径查找窗口；
+  - `process_partial_match`(bool)：进程匹配是否允许部分匹配。
+- 匹配与点击
+  - `template_path`(str)：单模板路径（兼容旧版）；
+  - `template_paths`(list[str])：多模板列表；非空时优先生效；
+  - `threshold`(float)：匹配阈值[0,1]；
+  - `grayscale`(bool)：启用灰度匹配，降低计算量；
+  - `multi_scale`(bool)：启用多尺度匹配；
+  - `scales`(list[float])：多尺度列表（`multi_scale=true` 生效）；
+  - `min_detections`(int)：连续命中帧数阈值；
+  - `click_offset`(list[int,int])：相对模板中心的点击偏移；
+  - `cooldown_s`(float)：命中后冷却时间（秒）；
+  - `click_method`(str)：点击方式，`message`(Windows 消息) 或 `simulate`(模拟点击)；
+  - `verify_window_before_click`(bool)：点击前验证窗口位置以提升安全性。
+- 扫描节奏与启动
+  - `interval_ms`(int)：扫描间隔（毫秒），越大越省电；
+  - `fps_max`(int)：捕获最大 FPS；
+  - `auto_start_scan`(bool)：应用启动后自动开始扫描；
+  - `enable_notifications`(bool)：启用托盘通知；
+  - `enable_logging`(bool)：启用日志写入 `log.txt`。
+- 调试与诊断
+  - `debug_mode`(bool)：调试模式（输出更多信息）；
+  - `save_debug_images`(bool)：保存调试截图（内存化存储，受限于上限策略）；
+  - `debug_image_dir`(str)：调试图片目录（必要时用于持久化导出）。
+- 多屏与坐标
+  - `monitor_index`(int)：显示器索引（1 基）；
+  - `roi`(obj)：截屏区域，字段 `x/y/w/h`，当 `w/h=0` 表示全屏；
+  - `enable_coordinate_correction`(bool)：启用坐标校正；
+  - `coordinate_offset`(list[int,int])：坐标修正偏移；
+  - `coordinate_transform_mode`(str)：`auto`/`manual`/`disabled`；
+  - `enable_multi_screen_polling`(bool)：在所有屏幕轮询搜索目标；
+  - `screen_polling_interval_ms`(int)：多屏轮询间隔（毫秒）。
+- WGC 捕获与容错
+  - `capture_timeout_ms`(int)：单次抓帧超时（毫秒）；
+  - `restore_minimized_noactivate`(bool)：处理最小化：恢复但不激活；
+  - `restore_minimized_after_capture`(bool)：抓帧后是否重新最小化；
+  - `enable_electron_optimization`(bool)：对 Electron/Chromium 应用的优化提示；
+  - `include_cursor`(bool)：是否包含鼠标光标；
+  - `window_border_required`(bool)：窗口边框要求；
+  - `screen_border_required`(bool)：屏幕边框要求；
+  - `border_required`(bool)：旧版统一边框开关（兼容保留）；
+  - `dirty_region_mode`(str)：脏区域模式（预留，暂未实现）。
+- 自动 HWND 更新
+  - `auto_update_hwnd_by_process`(bool)：根据进程名自动更新 HWND；
+  - `auto_update_hwnd_interval_ms`(int)：自动更新间隔（毫秒）。
 
-## 📞 技术支持
+迁移与兼容性说明：
+- 捕获后端迁移：旧配置 `screen/auto` -> `monitor`，`wgc` -> `window`；
+- 边框配置迁移：若缺少 `window_border_required/screen_border_required`，将回退到 `border_required`；
+- `use_monitor` 未设置时按 `capture_backend` 推断。
 
-如果遇到问题，请按以下顺序尝试：
 
-1. **自助排查**：
-   - 查看本README的故障排除部分
-   - 运行相关的诊断工具
-   - 启用调试模式获取详细信息
+## 性能与内存优化
+- 架构分层：
+  - UI 主线程仅处理信号与渲染；
+  - IO 使用 `workers/io_tasks.py` 的全局线程池；
+  - CPU 密集扫描在独立进程内完成（`workers/scanner_process.py`）。
+- GUI 响应性：
+  - `auto_approve/gui_responsiveness_manager.py` 批处理 UI 更新，提供优先级和节流；
+  - `auto_approve/gui_performance_monitor.py` 监测主线程 CPU、内存、事件循环延迟与响应时间并告警；
+  - 关键 UI 状态变化绕过节流，确保及时反馈。
+- 内存优化：
+  - `utils/memory_template_manager.py` 将模板加载进内存缓存；
+  - `utils/memory_debug_manager.py` 将调试截图保存在内存并按上限淘汰；
+  - `utils/memory_config_manager.py` 降低频繁持久化写入；
+  - 统一入口 `utils/memory_optimization_manager.py` 根据级别自适配参数。
+- WGC 严格实现：
+  - `capture/wgc_backend.py` 严格处理 ContentSize/RowPitch，尺寸变化时重建 FramePool，禁止 PrintWindow 回退；
+  - 最小化窗口无感恢复，窗口/显示器模式均可工作。
 
-2. **社区支持**：
-   - 搜索已有的Issue
-   - 提交新的Issue并附上详细信息
-   - 参与讨论和经验分享
 
-3. **开发者联系**：
-   - 对于复杂的技术问题
-   - 功能定制需求
-   - 商业使用咨询
+## 工具脚本
+- `tools/verify_wgc.py`：验证 WGC 在窗口化/最大化/尺寸变化下捕获质量与统计；
+- `tools/wgc_diagnostic_tool.py`：WGC 环境诊断与常见问题分析；
+- `tools/fix_wgc_hwnd.py`、`tools/fix_scanner_process_hang.py`：自动化修复入口；
+- `tools/performance_monitor.py`、`tools/performance_diagnostic.py`、`tools/performance_guardian.py`：性能观测与守护；
+- `tools/main_performance_optimizer.py`：一键应用若干性能优化策略。
 
-## 🔄 版本历史
+运行示例（PowerShell）：
+```powershell
+python.exe .\tools\verify_wgc.py
+```
 
-### V4.1 (当前版本)
-- 增强了错误恢复机制
-- 优化了多屏幕支持
-- 改进了用户界面体验
-- 修复了已知的稳定性问题
 
-### V4.0
-- 完全重构为纯WGC实现
-- 移除传统截屏方案
-- 大幅提升性能和稳定性
+## 测试
+项目测试均位于 `tests/` 目录，命名以 `test_` 开头。由于包含 GUI/WGC 相关测试，建议先执行轻量用例：
+- 运行导入自检：
+```powershell
+python.exe .\tests\test_import.py
+```
+- 若使用 `pytest`（可选）：
+```powershell
+# 仅运行轻量测试示例（如存在 pytest）
+pytest -k import -q
+```
 
-### V3.x
-- 引入WGC捕获技术
-- 支持硬件加速应用
-- 添加多屏幕支持
+注意：完整测试可能需要可用的 WGC 环境与目标窗口，请在 Windows 桌面会话中运行。
 
----
 
-**⚠️ 重要提醒**：本工具设计用于自动化重复性的点击操作，请确保在合法和适当的场景下使用。使用前请仔细阅读相关软件的使用条款，避免违反服务协议。
+## 常见问题与排查
+- 托盘不显示/提示系统不支持托盘：请在桌面会话中运行，确保 Windows 托盘可用；
+- 捕获黑屏/畸变：参考 `docs/WGC黑屏问题修复与共享通道优化方案.md` 与 `docs/WGC修复快速参考.md`；
+- 模板不命中：检查 DPI/缩放一致性、阈值、`grayscale`/`multi_scale` 设置与 `roi`；
+- 点击无效：确认 `click_method`、窗口前台/坐标校正与权限；
+- 启动卡顿/超时（30s）：观察托盘状态提示，必要时运行 `tools/performance_diagnostic.py` 或优化脚本。
 
-**🎯 项目目标**：让AI开发更高效，让重复操作自动化，专注于创造而非等待。
 
-**📈 项目统计**：
-- 支持的AI IDE：10+
-- 预置模板数量：6个
-- 测试覆盖率：85%+
-- 平均响应时间：<100ms
+## 运行与退出
+- 双击托盘图标：打开“设置…”对话框；
+- 托盘菜单“退出”：安全停止扫描/线程/进程并清理资源；
+- 控制台 `Ctrl+C`：已注册信号处理，触发安全退出。
+
+
+## 依赖
+详见 `requirements.txt`，核心包括：
+- PySide6、numpy、opencv-python、Pillow、psutil；
+- windows-capture（WGC）、qasync、aiohttp/websockets/requests（可选）。
+
+## 项目树
+以下为基于当前仓库生成的精简项目树（省略 `__pycache__` 及部分大量图片/报告文件）：
+
+```
+.
+├─ README.md
+├─ requirements.txt
+├─ config.json
+├─ main_auto_approve_refactored.py
+├─ examples/
+│  └─ multithreading_demo.py
+├─ auto_approve/
+│  ├─ __init__.py
+│  ├─ app_state.py
+│  ├─ auto_hwnd_updater.py
+│  ├─ config_manager.py
+│  ├─ config_optimizer.py
+│  ├─ gui_performance_monitor.py
+│  ├─ gui_responsiveness_manager.py
+│  ├─ hwnd_picker.py
+│  ├─ logger_manager.py
+│  ├─ menu_icons.py
+│  ├─ path_utils.py
+│  ├─ performance_config.py
+│  ├─ performance_monitor.py
+│  ├─ performance_optimizer.py
+│  ├─ performance_types.py
+│  ├─ scanner_process_adapter.py
+│  ├─ scanner_worker_refactored.py
+│  ├─ settings_dialog.py
+│  ├─ screen_list_dialog.py
+│  ├─ ui_enhancements.py
+│  ├─ ui_optimizer.py
+│  ├─ win_clicker.py
+│  ├─ wgc_preview_dialog.py
+│  ├─ ui/
+│  │  └─ __init__.py
+│  ├─ core/
+│  │  ├─ __init__.py
+│  │  └─ app_utils.py
+│  └─ performance/
+│     ├─ __init__.py
+│     └─ alert_handlers.py
+├─ capture/
+│  ├─ __init__.py
+│  ├─ cache_manager.py
+│  ├─ capture_manager.py
+│  ├─ monitor_utils.py
+│  ├─ shared_frame_cache.py
+│  └─ wgc_backend.py
+├─ workers/
+│  ├─ async_tasks.py
+│  ├─ cpu_tasks.py
+│  ├─ io_tasks.py
+│  └─ scanner_process.py
+├─ utils/
+│  ├─ __init__.py
+│  ├─ bounded_latest_queue.py
+│  ├─ memory_config_manager.py
+│  ├─ memory_debug_manager.py
+│  ├─ memory_optimization_manager.py
+│  ├─ memory_performance_monitor.py
+│  ├─ memory_template_manager.py
+│  ├─ performance_profiler.py
+│  ├─ win_dpi.py
+│  ├─ win_types.py
+│  ├─ memory/
+│  │  └─ __init__.py
+│  └─ windows/
+│     └─ __init__.py
+├─ tools/
+│  ├─ convert_png_to_ico.py
+│  ├─ fix_monitor_config.py
+│  ├─ fix_scanner_process_hang.py
+│  ├─ fix_wgc_hwnd.py
+│  ├─ main_performance_optimizer.py
+│  ├─ performance_diagnostic.py
+│  ├─ performance_guardian.py
+│  ├─ performance_monitor.py
+│  ├─ smoke_import_test.py
+│  ├─ ui_startup_lag_diagnosis.py
+│  ├─ verify_wgc.py
+│  └─ wgc_diagnostic_tool.py
+├─ assets/
+│  ├─ images/
+│  │  ├─ approve2.png
+│  │  ├─ approve3.png
+│  │  ├─ approve_pix.png
+│  │  ├─ Run*.png …（省略若干示例）
+│  │  └─ template_*.png …（省略若干）
+│  ├─ icons/
+│  │  └─ icons/
+│  │     ├─ custom_icon.ico
+│  │     └─ custom_icon_test.png
+│  └─ styles/
+│     ├─ minimal.qss
+│     ├─ modern_flat.qss
+│     └─ modern_flat_lite.qss
+├─ docs/
+│  ├─ WGC修复实施检查清单.md
+│  ├─ WGC修复快速参考.md
+│  ├─ WGC黑屏问题修复与共享通道优化方案.md
+│  └─ 窗口捕获卡死问题优化总结.md
+└─ tests/
+   ├─ test_import.py
+   ├─ test_scanner_process.py
+   ├─ test_scanner_fallback.py
+   ├─ test_shared_frame_cache.py
+   ├─ test_complete_shared_channel.py
+   ├─ test_memory_optimization.py
+   ├─ test_memory_optimization_simple.py
+   ├─ test_memory_optimization_cross_platform.py
+   ├─ test_multithreading_architecture.py
+   ├─ test_gui_basic.py
+   ├─ test_gui_responsiveness.py
+   ├─ test_ui_refresh_throttle.py
+   ├─ test_bounded_latest_queue.py
+   ├─ test_utils.py
+   ├─ test_dependency_analysis.py
+   ├─ test_conflict_analysis.py
+   ├─ test_redundancy_analysis.py
+   ├─ test_direct_wgc.py
+   ├─ test_auto_hwnd_*.py …（多文件）
+   ├─ test_system_status.py
+   ├─ test_simple.py
+   ├─ simple_*.py
+   ├─ verify_process_implementation.py
+   └─ project_*/dependency_*/conflict_*/redundancy_* …（报告/计划）
+```

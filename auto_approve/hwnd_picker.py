@@ -346,24 +346,70 @@ class HWNDPickerDialog(QtWidgets.QDialog):
         try:
             from capture import CaptureManager
             import cv2, time
+            import numpy as np
 
             # 使用新的CaptureManager
             cap = CaptureManager()
             cap.configure(fps=10, include_cursor=False, border_required=False, restore_minimized=True)
 
-            # 打开窗口捕获
-            success = cap.open_window(self._sel_hwnd)
+            # 显示进度提示
+            progress = QtWidgets.QProgressDialog("正在测试窗口捕获...", "取消", 0, 100, self)
+            progress.setWindowModality(QtCore.Qt.WindowModal)
+            progress.setAutoClose(True)
+            progress.show()
+            progress.setValue(30)
+            QtWidgets.QApplication.processEvents()
+
+            # 打开窗口捕获 - 使用异步模式避免阻塞GUI
+            success = cap.open_window(self._sel_hwnd, async_init=True, timeout=2.0)
             if not success:
+                progress.close()
                 QtWidgets.QMessageBox.warning(self, "测试失败", "WGC窗口捕获启动失败，请检查窗口是否有效")
                 return
 
-            # 捕获一帧
-            img = cap.capture_frame()
-            cap.close()
+            progress.setValue(60)
+            QtWidgets.QApplication.processEvents()
+
+            # 等待捕获稳定，但允许GUI响应
+            for i in range(5):  # 分成5次，每次100ms
+                time.sleep(0.1)
+                QtWidgets.QApplication.processEvents()
+                if progress.wasCanceled():
+                    cap.close()
+                    return
+
+            progress.setValue(80)
+            QtWidgets.QApplication.processEvents()
+
+            # 使用共享帧缓存获取图像
+            img = cap.get_shared_frame("hwnd_picker_test", "test")
+            if img is None:
+                # 如果共享缓存没有，尝试传统捕获
+                img = cap.capture_frame()
 
             if img is None:
+                progress.close()
+                cap.close()
                 QtWidgets.QMessageBox.warning(self, "测试失败", "窗口捕获失败，可能窗口不可见/已关闭/不支持")
                 return
+
+            progress.setValue(90)
+            QtWidgets.QApplication.processEvents()
+
+            # 检查图像质量
+            mean_value = np.mean(img)
+            if mean_value < 1.0:
+                progress.close()
+                cap.release_shared_frame("hwnd_picker_test")
+                cap.close()
+                QtWidgets.QMessageBox.warning(self, "捕获警告",
+                    f"捕获成功但图像疑似为全黑，平均值: {mean_value:.2f}\n"
+                    "可能原因：窗口被最小化或隐藏")
+                return
+
+            progress.setValue(100)
+            progress.close()
+
             # 显示预览
             h, w = img.shape[:2]
             rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
@@ -372,10 +418,17 @@ class HWNDPickerDialog(QtWidgets.QDialog):
             from auto_approve.settings_dialog import ScreenshotPreviewDialog
             dlg = ScreenshotPreviewDialog(pm, self, is_wgc_test=True)
             dlg.setWindowTitle("WGC捕获测试结果")
-            if dlg.exec() == QtWidgets.QDialog.Accepted:
-                path = f"wgc_test_capture_{int(time.time())}.png"
-                cv2.imwrite(path, img)
-                QtWidgets.QMessageBox.information(self, "已保存", f"图片保存到: {path}")
+
+            try:
+                if dlg.exec() == QtWidgets.QDialog.Accepted:
+                    path = f"wgc_test_capture_{int(time.time())}.png"
+                    cv2.imwrite(path, img)
+                    QtWidgets.QMessageBox.information(self, "已保存", f"图片保存到: {path}")
+            finally:
+                # 确保在用户操作完成后释放资源
+                cap.release_shared_frame("hwnd_picker_test")
+                cap.close()
+
         except Exception as e:
             QtWidgets.QMessageBox.critical(self, "错误", f"测试捕获出错: {e}")
 

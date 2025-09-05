@@ -27,6 +27,7 @@ kernel32 = ctypes.windll.kernel32
 
 # 日志
 from auto_approve.logger_manager import get_logger
+from .shared_frame_cache import get_shared_frame_cache
 
 # WGC 可用性检测
 try:
@@ -90,6 +91,18 @@ class WGCCaptureSession:
 
         # 临时目录管理（优化IO性能）
         self._temp_dir: Optional[str] = None
+
+        # 共享帧缓存
+        self._frame_cache = get_shared_frame_cache()
+        self._session_id = f"wgc_{int(time.time() * 1000000)}"
+
+        # 会话健康检查
+        self._health_check_enabled = True
+        self._last_health_check = 0.0
+        self._health_check_interval = 5.0  # 每5秒检查一次
+        self._consecutive_failures = 0
+        self._max_consecutive_failures = 3
+        self._session_healthy = True
         
     @classmethod
     def from_hwnd(cls, hwnd: int, size: Optional[Tuple[int, int]] = None) -> 'WGCCaptureSession':
@@ -425,6 +438,11 @@ class WGCCaptureSession:
                     self._last_content_size = (w, h)
                 except Exception:
                     pass
+
+                # 缓存到共享帧缓存系统
+                frame_id = f"{self._session_id}_{self._frame_count}"
+                self._frame_cache.cache_frame(bgr_image, frame_id)
+
                 with self._lock:
                     self._latest_frame = bgr_image
                     self._last_frame_time = current_time
@@ -443,13 +461,12 @@ class WGCCaptureSession:
             
     def _extract_bgr_from_frame_strict(self, frame: Any) -> Optional[np.ndarray]:
         """
-        优化的Frame对象BGR图像提取方法 - 避免磁盘IO卡顿
+        优化的Frame对象BGR图像提取方法 - 使用正确的Frame API
 
         优化策略：
-        1. 优先使用内存缓冲区方法，避免临时文件IO
-        2. 缓存临时目录，减少文件系统开销
-        3. 使用内存映射优化大图像处理
-        4. 添加性能监控和降级策略
+        1. 优先使用Frame.convert_to_bgr()方法（最正确）
+        2. 回退到save_as_image + 文件读取（兼容性）
+        3. 避免直接访问frame_buffer（数据不完整）
 
         Args:
             frame: WGC Frame 对象
@@ -463,115 +480,103 @@ class WGCCaptureSession:
             import tempfile
             import os
 
-            # 方法1：优先尝试直接内存缓冲区访问（最快）
+            # 方法1：使用Frame.convert_to_bgr()方法（推荐）
             try:
-                if hasattr(frame, 'frame_buffer') and hasattr(frame, 'width') and hasattr(frame, 'height'):
-                    buffer = frame.frame_buffer
-                    width = frame.width
-                    height = frame.height
+                if hasattr(frame, 'convert_to_bgr'):
+                    self._logger.debug("使用Frame.convert_to_bgr()方法提取图像")
+                    bgr_frame = frame.convert_to_bgr()
 
-                    if buffer is not None and len(buffer) > 0:
-                        # 尝试从缓冲区创建numpy数组
-                        # 假设是BGRA格式
-                        buffer_size = len(buffer)
-                        expected_size = width * height * 4  # BGRA
+                    if bgr_frame is not None:
+                        # convert_to_bgr()返回的是另一个Frame对象，不是numpy数组
+                        if hasattr(bgr_frame, 'frame_buffer'):
+                            buffer = bgr_frame.frame_buffer
+                            width = getattr(bgr_frame, 'width', frame.width)
+                            height = getattr(bgr_frame, 'height', frame.height)
 
-                        if buffer_size == expected_size:
-                            img_data = np.frombuffer(buffer, dtype=np.uint8)
-                            img_bgra = img_data.reshape((height, width, 4))
-                            # 转换BGRA到BGR（避免内存拷贝）
-                            img_bgr = img_bgra[:, :, [2, 1, 0]]  # 取BGR通道
-                            # 确保连续内存布局
-                            img_bgr = np.ascontiguousarray(img_bgr)
-                            self._logger.debug(f"成功从frame_buffer提取图像: {img_bgr.shape}")
-                            return img_bgr
+                            if buffer is not None and isinstance(buffer, np.ndarray):
+                                self._logger.debug(f"BGR Frame buffer形状: {buffer.shape}, 类型: {buffer.dtype}")
+
+                                # 检查buffer是否已经是正确的BGR格式
+                                if len(buffer.shape) == 3 and buffer.shape[2] == 3:
+                                    # 已经是HxWx3的BGR格式
+                                    if buffer.shape[0] == height and buffer.shape[1] == width:
+                                        self._logger.debug(f"成功从convert_to_bgr()提取BGR图像: {buffer.shape}")
+                                        return buffer.copy()
+                                    else:
+                                        self._logger.warning(f"BGR buffer尺寸不匹配: {buffer.shape} vs {height}x{width}")
+                                elif len(buffer.shape) == 3 and buffer.shape[2] == 4:
+                                    # 仍然是BGRA格式，需要转换
+                                    bgr_array = buffer[:, :, :3]  # 取前3个通道
+                                    self._logger.debug(f"从BGRA转换为BGR: {bgr_array.shape}")
+                                    return bgr_array.copy()
+                                else:
+                                    self._logger.warning(f"BGR Frame buffer格式异常: {buffer.shape}")
+                            else:
+                                self._logger.warning(f"BGR Frame buffer无效: {type(buffer)}")
                         else:
-                            self._logger.debug(f"缓冲区大小不匹配: expected={expected_size}, actual={buffer_size}")
+                            self._logger.warning("BGR Frame没有frame_buffer属性")
+                    else:
+                        self._logger.warning("convert_to_bgr()返回None")
 
             except Exception as e:
-                self._logger.debug(f"从frame_buffer提取数据失败: {e}")
+                self._logger.debug(f"convert_to_bgr()方法失败: {e}")
 
-            # 方法2：优化的临时文件方法（减少IO开销）
-            if hasattr(frame, 'save_as_image'):
-                try:
-                    # 使用内存中的临时目录（如果可用）
-                    temp_dir = getattr(self, '_temp_dir', None)
-                    if temp_dir is None or not os.path.exists(temp_dir):
-                        # 创建专用临时目录，减少文件系统碎片
-                        temp_dir = tempfile.mkdtemp(prefix='wgc_capture_')
-                        self._temp_dir = temp_dir
+            # 方法2：使用save_as_image + 文件读取（回退方案）
+            try:
+                if hasattr(frame, 'save_as_image'):
+                    self._logger.debug("使用save_as_image()方法提取图像")
 
-                    # 使用固定文件名，避免频繁创建删除
-                    temp_path = os.path.join(temp_dir, 'frame_capture.png')
+                    # 使用缓存的临时目录
+                    if not self._temp_dir or not os.path.exists(self._temp_dir):
+                        self._temp_dir = tempfile.mkdtemp(prefix="wgc_frame_")
+                        self._logger.debug(f"创建临时目录: {self._temp_dir}")
 
-                    # 保存Frame为图像
+                    # 创建临时文件
+                    import time
+                    temp_filename = f"frame_{int(time.time() * 1000000)}.png"
+                    temp_path = os.path.join(self._temp_dir, temp_filename)
+
+                    # 保存图像
                     frame.save_as_image(temp_path)
 
-                    # 读取图像
-                    img_bgr = cv2.imread(temp_path, cv2.IMREAD_COLOR)
+                    if os.path.exists(temp_path):
+                        # 使用OpenCV读取
+                        img_bgr = cv2.imread(temp_path, cv2.IMREAD_COLOR)
 
-                    if img_bgr is not None:
-                        self._logger.debug(f"成功使用save_as_image提取图像: {img_bgr.shape}")
-                        return img_bgr
+                        # 清理临时文件
+                        try:
+                            os.unlink(temp_path)
+                        except:
+                            pass
+
+                        if img_bgr is not None:
+                            self._logger.debug(f"成功从save_as_image()提取图像: {img_bgr.shape}")
+                            return img_bgr
+                        else:
+                            self._logger.warning("OpenCV无法读取保存的图像文件")
                     else:
-                        self._logger.warning("cv2.imread读取失败")
-
-                except Exception as e:
-                    self._logger.error(f"save_as_image方法失败: {e}")
-
-            # 方法3：尝试其他可能的属性
-            try:
-                # 检查是否有其他可用的图像数据属性
-                for attr_name in ['image_data', 'pixel_data', 'bitmap_data', 'surface_data']:
-                    if hasattr(frame, attr_name):
-                        data = getattr(frame, attr_name)
-                        if data is not None:
-                            self._logger.debug(f"发现可能的图像数据属性: {attr_name}")
-                            # 这里可以添加针对特定属性的处理逻辑
-                            break
+                        self._logger.warning("save_as_image()未能创建文件")
 
             except Exception as e:
-                self._logger.debug(f"探索其他属性失败: {e}")
+                self._logger.debug(f"save_as_image()方法失败: {e}")
 
-            # 方法4：回退到模拟数据（用于调试）
-            self._logger.warning("所有提取方法都失败，使用模拟数据")
-            h, w = getattr(frame, 'height', 600), getattr(frame, 'width', 800)
-            img_bgr = np.zeros((h, w, 3), dtype=np.uint8)
-            # 添加调试信息
-            cv2.putText(img_bgr, "WGC Fallback Mode", (50, 100), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-            cv2.putText(img_bgr, f"Frame: {type(frame)}", (50, 150), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
-            return img_bgr
+            # 方法3：回退到模拟数据（仅用于调试，不应该到达这里）
+            self._logger.error("所有Frame图像提取方法都失败，这表明Frame对象可能损坏")
 
-            if img_bgr is not None:
-                h, w = img_bgr.shape[:2]
+            # 获取Frame尺寸信息用于错误报告
+            width = getattr(frame, 'width', 800)
+            height = getattr(frame, 'height', 600)
 
-                # 检查ContentSize变化，模拟FramePool重建检测
-                current_size = (w, h)
-                if self._last_content_size != current_size:
-                    if self._last_content_size is not None:
-                        self._logger.info(f"ContentSize变化: {self._last_content_size} → {current_size}")
-                        self._logger.info("模拟FramePool重建 (Direct3D11CaptureFramePool.Recreate)")
-                        self._frame_pool_recreated = True
-                    else:
-                        self._logger.info(f"初始ContentSize: {current_size}")
+            self._logger.error(f"Frame信息: width={width}, height={height}, type={type(frame)}")
 
-                    self._last_content_size = current_size
+            # 检查frame_buffer的实际情况
+            if hasattr(frame, 'frame_buffer'):
+                buffer = frame.frame_buffer
+                buffer_size = len(buffer) if buffer is not None else 0
+                expected_size = width * height * 4
+                self._logger.error(f"frame_buffer大小: {buffer_size}, 期望大小: {expected_size}")
 
-                # 模拟RowPitch处理日志（实际RowPitch通常 >= w*4）
-                simulated_row_pitch = ((w * 4 + 63) // 64) * 64  # 64字节对齐
-                row_pitch_ratio = simulated_row_pitch / (w * 4) if w > 0 else 1.0
-
-                self._logger.debug(f"帧处理: w={w}, h={h}, row_pitch={simulated_row_pitch}, "
-                                 f"ratio={row_pitch_ratio:.3f}, format=BGRA, recreate={self._frame_pool_recreated}")
-
-                # 重置重建标志
-                if self._frame_pool_recreated:
-                    self._frame_pool_recreated = False
-
-                return img_bgr
-            else:
-                self._logger.error("模拟图像创建失败")
-                return None
+            return None
 
         except Exception as e:
             self._logger.error(f"严格帧提取失败: {e}")
@@ -624,10 +629,40 @@ class WGCCaptureSession:
         Returns:
             np.ndarray: BGR 图像，如果没有可用帧则返回 None
         """
+        # 进行健康检查
+        if not self._check_session_health():
+            self._logger.warning("会话不健康，尝试恢复...")
+            if self._attempt_session_recovery():
+                self._logger.info("会话恢复成功，继续捕获")
+            else:
+                self._logger.error("会话恢复失败，返回None")
+                return None
+
         with self._lock:
             if self._latest_frame is not None:
                 return self._latest_frame.copy()
         return None
+
+    def get_shared_frame(self, user_id: str) -> Optional[np.ndarray]:
+        """
+        从共享缓存获取帧（避免拷贝）
+
+        Args:
+            user_id: 使用者ID（如"preview", "detection"等）
+
+        Returns:
+            np.ndarray: BGR图像数据的视图，如果缓存无效则返回None
+        """
+        return self._frame_cache.get_frame(user_id)
+
+    def release_shared_frame(self, user_id: str) -> None:
+        """
+        释放共享帧的使用者引用
+
+        Args:
+            user_id: 使用者ID
+        """
+        self._frame_cache.release_user(user_id)
 
     def wait_for_frame(self, timeout: float = 1.0) -> Optional[np.ndarray]:
         """
@@ -639,6 +674,11 @@ class WGCCaptureSession:
         Returns:
             np.ndarray: BGR 图像，超时则返回 None
         """
+        # 在等待前进行健康检查
+        if not self._check_session_health():
+            self._logger.warning("等待帧时发现会话不健康")
+            return None
+
         if self._frame_event.wait(timeout):
             self._frame_event.clear()
             return self.grab()
@@ -673,6 +713,94 @@ class WGCCaptureSession:
 
         # 停止捕获
         self.stop()
+
+    def _check_session_health(self) -> bool:
+        """
+        检查会话健康状态
+
+        Returns:
+            bool: 会话是否健康
+        """
+        if not self._health_check_enabled:
+            return True
+
+        current_time = time.time()
+
+        # 检查是否需要进行健康检查
+        if current_time - self._last_health_check < self._health_check_interval:
+            return self._session_healthy
+
+        self._last_health_check = current_time
+
+        try:
+            # 检查会话是否存在
+            if not self._session:
+                self._logger.warning("会话健康检查：会话不存在")
+                self._session_healthy = False
+                return False
+
+            # 检查目标窗口是否仍然有效
+            if self._target_hwnd and not user32.IsWindow(self._target_hwnd):
+                self._logger.warning(f"会话健康检查：目标窗口已无效 HWND={self._target_hwnd}")
+                self._session_healthy = False
+                return False
+
+            # 检查是否长时间没有新帧
+            if self._frame_count > 0:  # 只有在已经有帧的情况下才检查
+                time_since_last_frame = current_time - self._last_frame_time
+                if time_since_last_frame > 10.0:  # 超过10秒没有新帧
+                    self._logger.warning(f"会话健康检查：长时间无新帧 {time_since_last_frame:.1f}s")
+                    self._consecutive_failures += 1
+                    if self._consecutive_failures >= self._max_consecutive_failures:
+                        self._session_healthy = False
+                        return False
+                else:
+                    self._consecutive_failures = 0  # 重置失败计数
+
+            self._session_healthy = True
+            return True
+
+        except Exception as e:
+            self._logger.error(f"会话健康检查异常: {e}")
+            self._session_healthy = False
+            return False
+
+    def _attempt_session_recovery(self) -> bool:
+        """
+        尝试恢复会话
+
+        Returns:
+            bool: 恢复是否成功
+        """
+        if not self._target_hwnd:
+            self._logger.error("无法恢复会话：缺少目标窗口句柄")
+            return False
+
+        try:
+            self._logger.info("尝试恢复WGC会话...")
+
+            # 停止当前会话
+            self.stop()
+
+            # 重新启动会话
+            success = self.start(
+                target_fps=self._target_fps,
+                include_cursor=self._include_cursor,
+                border_required=self._border_required
+            )
+
+            if success:
+                self._logger.info("WGC会话恢复成功")
+                self._consecutive_failures = 0
+                self._session_healthy = True
+                return True
+            else:
+                self._logger.error("WGC会话恢复失败")
+                return False
+
+        except Exception as e:
+            self._logger.error(f"WGC会话恢复异常: {e}")
+            return False
 
     def __enter__(self):
         return self

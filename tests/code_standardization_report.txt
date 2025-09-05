@@ -1,0 +1,33 @@
+============================================================
+代码规范化分析报告
+============================================================
+
+📊 总体统计:
+  - 分析文件数: 86
+  - 发现问题数: 389
+
+🚨 问题严重程度:
+  ℹ️ info: 388
+  ⚠️ warning: 1
+
+📋 问题类型分布:
+  - import_order: 113
+  - function_docstring_missing: 105
+  - trailing_whitespace: 89
+  - line_too_long: 51
+  - class_docstring_missing: 28
+  - comment_spacing: 2
+  - encoding_missing: 1
+
+📁 问题最多的文件:
+  - auto_approve\settings_dialog.py: 67 个问题
+  - tests\test_multithreading_architecture.py: 21 个问题
+  - tests\test_memory_optimization_cross_platform.py: 19 个问题
+  - tests\test_utils.py: 18 个问题
+  - auto_approve\ui_enhancements.py: 14 个问题
+
+💡 改进建议:
+  • 为所有Python文件添加UTF-8编码声明
+  • 按照PEP 8规范整理导入顺序
+  • 将过长的代码行拆分
+  • 清理行尾多余空格

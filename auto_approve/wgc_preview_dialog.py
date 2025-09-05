@@ -24,6 +24,9 @@ class WGCPreviewDialog(QtWidgets.QDialog):
         self.preview_fps = max(1, min(int(fps), 60))
         self.include_cursor = bool(include_cursor)
         self.border_required = bool(border_required)
+
+        # 共享帧缓存用户ID
+        self.user_id = f"wgc_preview_{hwnd}_{int(time.time())}"
         
         self.setWindowTitle(f"WGC实时预览 - HWND: {hwnd}")
         self.resize(800, 600)
@@ -133,28 +136,38 @@ class WGCPreviewDialog(QtWidgets.QDialog):
         """开始预览"""
         if not self.capture_manager:
             return
-            
+
+        # 禁用开始按钮，防止重复点击
+        self.start_btn.setEnabled(False)
+        self.status_label.setText("正在启动...")
+        QtWidgets.QApplication.processEvents()
+
         try:
-            # 打开窗口捕获
-            success = self.capture_manager.open_window(self.hwnd)
+            # 打开窗口捕获 - 使用异步模式避免阻塞GUI
+            success = self.capture_manager.open_window(self.hwnd, async_init=True, timeout=3.0)
             if not success:
-                QtWidgets.QMessageBox.warning(self, "失败", "无法启动窗口捕获")
+                self.status_label.setText("启动失败")
+                self.start_btn.setEnabled(True)
+                QtWidgets.QMessageBox.warning(self, "失败", "无法启动窗口捕获，请检查窗口是否有效")
                 return
-            
+
             # 设置定时器
             self.timer = QtCore.QTimer()
             self.timer.timeout.connect(self._capture_frame)
-            self.timer.start(66)  # 约15 FPS
-            
+
+            # 根据预览FPS设置定时器间隔
+            interval = max(16, int(1000 / self.preview_fps))  # 最少16ms (约60FPS)
+            self.timer.start(interval)
+
             self.is_capturing = True
-            self.start_btn.setEnabled(False)
             self.stop_btn.setEnabled(True)
             self.save_btn.setEnabled(True)
-            
+
             self.status_label.setText("预览中...")
-            
+
         except Exception as e:
             self.status_label.setText(f"启动失败: {e}")
+            self.start_btn.setEnabled(True)
             QtWidgets.QMessageBox.critical(self, "错误", f"启动预览失败: {e}")
     
     def _stop_preview(self):
@@ -162,35 +175,61 @@ class WGCPreviewDialog(QtWidgets.QDialog):
         if self.timer:
             self.timer.stop()
             self.timer = None
-        
+
         if self.capture_manager:
+            # 释放共享帧缓存引用
+            self.capture_manager.release_shared_frame(self.user_id)
             self.capture_manager.close()
-        
+
         self.is_capturing = False
         self.start_btn.setEnabled(True)
         self.stop_btn.setEnabled(False)
         self.save_btn.setEnabled(False)
-        
+
         self.status_label.setText("已停止")
         self.preview_label.setText("预览已停止")
     
     def _capture_frame(self):
-        """捕获并显示一帧"""
+        """捕获并显示一帧（使用共享帧缓存）"""
         if not self.capture_manager or not self.is_capturing:
             return
-            
+
         try:
-            # 捕获帧
-            frame = self.capture_manager.capture_frame()
+            # 添加超时保护，避免长时间阻塞
+            import time
+            start_time = time.time()
+
+            # 优先使用共享帧缓存
+            frame = self.capture_manager.get_shared_frame(self.user_id, "preview")
             if frame is None:
-                return
-            
+                # 如果共享缓存没有，尝试传统捕获（带超时）
+                frame = self.capture_manager.capture_frame()
+                if frame is None:
+                    # 连续失败计数
+                    if not hasattr(self, '_capture_fail_count'):
+                        self._capture_fail_count = 0
+                    self._capture_fail_count += 1
+
+                    # 如果连续失败超过30次（约2秒），显示警告
+                    if self._capture_fail_count > 30:
+                        self.status_label.setText("捕获失败，请检查窗口状态")
+                        self._capture_fail_count = 0  # 重置计数
+                    return
+
+            # 重置失败计数
+            self._capture_fail_count = 0
+
+            # 检查捕获耗时
+            capture_time = (time.time() - start_time) * 1000
+            if capture_time > 100:  # 超过100ms
+                self.status_label.setText(f"捕获较慢: {capture_time:.1f}ms")
+
             self.current_frame = frame
             h, w = frame.shape[:2]
-            
+
             # 更新尺寸信息
             self.size_label.setText(f"尺寸: {w}×{h}")
-            
+
             # 计算FPS
             self.frame_count += 1
             current_time = time.time()
@@ -199,12 +238,21 @@ class WGCPreviewDialog(QtWidgets.QDialog):
                 self.fps_label.setText(f"FPS: {fps:.1f}")
                 self.frame_count = 0
                 self.last_fps_time = current_time
-            
+
             # 转换为Qt图像并显示
             self._display_frame(frame)
-            
+
         except Exception as e:
             self.status_label.setText(f"捕获错误: {e}")
+            # 连续异常计数
+            if not hasattr(self, '_exception_count'):
+                self._exception_count = 0
+            self._exception_count += 1
+
+            # 如果连续异常超过10次，停止预览
+            if self._exception_count > 10:
+                self.status_label.setText("捕获异常过多，已停止预览")
+                self._stop_preview()
     
     def _display_frame(self, frame):
         """显示帧到预览标签"""
@@ -265,6 +313,9 @@ class WGCPreviewDialog(QtWidgets.QDialog):
     def closeEvent(self, event):
         """关闭事件"""
         self._stop_preview()
+        # 确保释放共享帧缓存引用
+        if self.capture_manager:
+            self.capture_manager.release_shared_frame(self.user_id)
         super().closeEvent(event)
     
     def resizeEvent(self, event):

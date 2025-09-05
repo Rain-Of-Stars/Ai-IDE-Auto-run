@@ -1,8 +1,7 @@
 {
-  "template_path": "assets\\images\\template_20250904_173429_102.png",
+  "template_path": "assets\\images\\template_20250906_002631_846.png",
   "template_paths": [
-    "assets\\images\\template_20250904_173429_102.png",
-    "assets\\images\\template_20250904_225309_001.png"
+    "assets\\images\\template_20250906_002631_846.png"
   ],
   "monitor_index": 0,
   "roi": {
@@ -11,13 +10,13 @@
     "w": 0,
     "h": 0
   },
-  "interval_ms": 1500,
-  "threshold": 0.85,
+  "interval_ms": 500,
+  "threshold": 0.95,
   "cooldown_s": 3.0,
   "enable_logging": false,
   "enable_notifications": true,
   "grayscale": true,
-  "multi_scale": true,
+  "multi_scale": false,
   "scales": [
     1.0
   ],
@@ -35,27 +34,29 @@
     0,
     0
   ],
-  "enhanced_window_finding": true,
+  "enhanced_window_finding": false,
   "click_method": "message",
-  "verify_window_before_click": true,
+  "verify_window_before_click": false,
   "coordinate_transform_mode": "auto",
-  "enable_multi_screen_polling": true,
-  "screen_polling_interval_ms": 2000,
+  "enable_multi_screen_polling": false,
+  "screen_polling_interval_ms": 5000,
   "capture_backend": "window",
   "use_monitor": false,
-  "target_hwnd": 136676,
+  "target_hwnd": 133958,
   "target_window_title": "Code",
   "window_title_partial_match": true,
   "target_process": "Code.exe",
   "process_partial_match": true,
   "fps_max": 1,
-  "capture_timeout_ms": 5000,
+  "capture_timeout_ms": 10000,
   "restore_minimized_noactivate": true,
   "restore_minimized_after_capture": false,
-  "enable_electron_optimization": true,
+  "enable_electron_optimization": false,
   "include_cursor": false,
-  "border_required": true,
-  "window_border_required": true,
-  "screen_border_required": true,
-  "dirty_region_mode": ""
+  "border_required": false,
+  "window_border_required": false,
+  "screen_border_required": false,
+  "dirty_region_mode": "",
+  "auto_update_hwnd_by_process": true,
+  "auto_update_hwnd_interval_ms": 5000
 }

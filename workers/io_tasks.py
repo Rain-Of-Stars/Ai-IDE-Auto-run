@@ -613,11 +613,12 @@ def submit_log_analysis(log_path: str, pattern: str = None, max_lines: int = 100
     return submit_io(task, on_success, on_error)
 
 
-def optimize_thread_pool(cpu_intensive_ratio: float = 0.3):
-    """优化线程池配置
+def optimize_thread_pool(cpu_intensive_ratio: float = 0.3, gui_priority: bool = True):
+    """优化线程池配置 - 增强GUI响应性
 
     Args:
         cpu_intensive_ratio: CPU密集型任务比例，用于调整线程数
+        gui_priority: 是否优先保证GUI响应性
     """
     pool = get_global_thread_pool()
 
@@ -626,19 +627,40 @@ def optimize_thread_pool(cpu_intensive_ratio: float = 0.3):
     cpu_count = os.cpu_count() or 4
 
     # 根据任务类型调整线程数
-    # IO密集型任务可以使用更多线程
-    if cpu_intensive_ratio < 0.2:
-        # 主要是IO任务，可以使用更多线程
-        optimal_threads = min(32, cpu_count * 4)
-    elif cpu_intensive_ratio > 0.7:
-        # 主要是CPU任务，使用较少线程
-        optimal_threads = max(2, cpu_count)
+    # 为了保证GUI响应性，适当减少线程数量
+    if gui_priority:
+        # GUI优先模式：保守的线程配置
+        if cpu_intensive_ratio < 0.2:
+            # 主要是IO任务，但为GUI保留资源
+            optimal_threads = min(cpu_count * 2, 12)
+        elif cpu_intensive_ratio > 0.7:
+            # 主要是CPU任务，最保守
+            optimal_threads = max(2, min(cpu_count, 4))
+        else:
+            # 混合任务，更保守
+            optimal_threads = min(cpu_count + 2, 8)
     else:
-        # 混合任务，使用中等数量线程
-        optimal_threads = min(16, cpu_count * 2)
+        # 原有逻辑：性能优先
+        if cpu_intensive_ratio < 0.2:
+            optimal_threads = min(32, cpu_count * 4)
+        elif cpu_intensive_ratio > 0.7:
+            optimal_threads = max(2, cpu_count)
+        else:
+            optimal_threads = min(16, cpu_count * 2)
 
+    # 设置线程池参数
     pool.setMaxThreadCount(optimal_threads)
-    get_logger().info(f"线程池已优化，最大线程数: {optimal_threads} (CPU核心数: {cpu_count})")
+    # 缩短超时时间，快速释放空闲线程
+    pool.setExpiryTimeout(15000)  # 15秒超时，减少资源占用
+
+    get_logger().info(f"线程池已优化，最大线程数: {optimal_threads} (CPU核心数: {cpu_count}, GUI优先: {gui_priority})")
+
+    return {
+        'max_threads': optimal_threads,
+        'cpu_count': cpu_count,
+        'cpu_intensive_ratio': cpu_intensive_ratio,
+        'gui_priority': gui_priority
+    }
 
 
 def cleanup_thread_pool():

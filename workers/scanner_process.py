@@ -81,21 +81,78 @@ class ScannerProcessSignals(QObject):
     error_occurred = Signal(str)
 
 
+def _compute_window_open_plan(cfg: AppConfig) -> list:
+    """根据配置生成窗口打开尝试顺序（纯逻辑函数，便于测试）。
+
+    返回值示例：
+    [
+        ("hwnd", 123456),
+        ("title", "Code"),
+        ("process", "Code.exe"),
+    ]
+    """
+    plan = []
+    try:
+        hwnd = int(getattr(cfg, 'target_hwnd', 0))
+    except Exception:
+        hwnd = 0
+    title = getattr(cfg, 'target_window_title', '') or getattr(cfg, 'window_title', '')
+    proc = getattr(cfg, 'target_process', '')
+
+    # 先尝试HWND，失败时允许回退
+    if hwnd > 0:
+        plan.append(("hwnd", hwnd))
+        # 若同时提供标题/进程名，作为回退项
+        if title:
+            plan.append(("title", title))
+        if proc:
+            plan.append(("process", proc))
+    else:
+        # 无有效HWND，直接走标题/进程名
+        if title:
+            plan.append(("title", title))
+        if proc:
+            plan.append(("process", proc))
+
+    return plan
+
+
 def _load_templates_from_paths(template_paths: List[str]) -> List[Tuple[np.ndarray, Tuple[int, int]]]:
-    """加载模板图像"""
-    templates = []
-    for path in template_paths:
-        try:
-            if os.path.exists(path):
-                # 使用cv2.imdecode处理中文路径
-                img_data = np.fromfile(path, dtype=np.uint8)
-                template = cv2.imdecode(img_data, cv2.IMREAD_COLOR)
-                if template is not None:
-                    h, w = template.shape[:2]
-                    templates.append((template, (w, h)))
-        except Exception as e:
-            print(f"加载模板失败 {path}: {e}")
-    return templates
+    """加载模板图像 - 使用内存模板管理器避免磁盘IO"""
+    try:
+        # 导入内存模板管理器
+        import sys
+        import os
+        sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        from utils.memory_template_manager import get_template_manager
+
+        # 获取模板管理器并加载模板
+        template_manager = get_template_manager()
+        template_manager.load_templates(template_paths)
+
+        # 从内存获取模板数据
+        templates = template_manager.get_templates(template_paths)
+
+        print(f"从内存加载了 {len(templates)} 个模板")
+        return templates
+
+    except Exception as e:
+        print(f"内存模板管理器加载失败，回退到传统方式: {e}")
+
+        # 回退到传统的磁盘加载方式
+        templates = []
+        for path in template_paths:
+            try:
+                if os.path.exists(path):
+                    # 使用cv2.imdecode处理中文路径
+                    img_data = np.fromfile(path, dtype=np.uint8)
+                    template = cv2.imdecode(img_data, cv2.IMREAD_COLOR)
+                    if template is not None:
+                        h, w = template.shape[:2]
+                        templates.append((template, (w, h)))
+            except Exception as e:
+                print(f"加载模板失败 {path}: {e}")
+        return templates
 
 
 def _template_matching(roi_img: np.ndarray, templates: List[Tuple[np.ndarray, Tuple[int, int]]], 
@@ -130,23 +187,32 @@ def _template_matching(roi_img: np.ndarray, templates: List[Tuple[np.ndarray, Tu
     return best_score, best_x, best_y, best_w, best_h
 
 
-def _scanner_worker_process(command_queue: mp.Queue, status_queue: mp.Queue, 
+def _scanner_worker_process(command_queue: mp.Queue, status_queue: mp.Queue,
                            hit_queue: mp.Queue, log_queue: mp.Queue):
     """扫描器工作进程"""
     logger = get_logger()
     logger.info("扫描器工作进程启动")
-    
-    # 设置 DPI 感知
-    set_process_dpi_awareness()
-    
-    # 进程状态
-    running = False
-    cfg: Optional[AppConfig] = None
-    capture_manager: Optional[CaptureManager] = None
-    templates: List[Tuple[np.ndarray, Tuple[int, int]]] = []
-    scan_count = 0
-    consecutive_clicks = 0
-    next_click_allowed = 0.0
+
+    try:
+        # 设置 DPI 感知
+        logger.info("设置DPI感知...")
+        set_process_dpi_awareness()
+        logger.info("DPI感知设置完成")
+
+        # 进程状态
+        running = False
+        cfg: Optional[AppConfig] = None
+        capture_manager: Optional[CaptureManager] = None
+        templates: List[Tuple[np.ndarray, Tuple[int, int]]] = []
+        scan_count = 0
+        consecutive_clicks = 0
+        next_click_allowed = 0.0
+
+        logger.info("扫描器工作进程初始化完成")
+
+    except Exception as e:
+        logger.error(f"扫描器工作进程初始化失败: {e}")
+        return
     
     def send_status(status_text: str = "", backend: str = "", detail: str = "", error: str = ""):
         """发送状态更新"""
@@ -180,14 +246,26 @@ def _scanner_worker_process(command_queue: mp.Queue, status_queue: mp.Queue,
             pass
     
     def init_capture_manager():
-        """初始化捕获管理器（适配新版 CaptureManager API）"""
+        """初始化捕获管理器（适配新版 CaptureManager API）
+
+        关键改进：
+        1) 当配置包含失效的 HWND 时，自动回退到按标题/按进程名查找，避免仅因一个失效句柄而失败；
+        2) 在关键阶段通过状态队列发送进度，让托盘不再长期停留在“正在创建扫描进程…”。
+        """
         nonlocal capture_manager
         try:
             if cfg is None:
+                send_log("配置为空，无法初始化捕获管理器")
                 return False
+
+            send_log("开始初始化捕获管理器...")
+            # 提前投递一次状态，避免UI长时间无反馈
+            send_status("启动中", "进程扫描", "正在初始化捕获管理器...")
 
             # 创建管理器并配置参数
             capture_manager = CaptureManager()
+            send_log("捕获管理器对象创建成功")
+
             fps = int(getattr(cfg, 'fps_max', getattr(cfg, 'target_fps', 30)))
             include_cursor = bool(getattr(cfg, 'include_cursor', False))
             # 根据模式分别读取边框开关（兼容旧字段）
@@ -197,12 +275,16 @@ def _scanner_worker_process(command_queue: mp.Queue, status_queue: mp.Queue,
                         getattr(cfg, 'border_required', False))
             )
             restore_minimized = bool(getattr(cfg, 'restore_minimized_after_capture', False))
+
+            send_log(f"配置参数: fps={fps}, cursor={include_cursor}, border={border_required}, monitor={use_monitor}")
+
             capture_manager.configure(
                 fps=fps,
                 include_cursor=include_cursor,
                 border_required=border_required,
                 restore_minimized=restore_minimized
             )
+            send_log("捕获管理器配置完成")
             if use_monitor:
                 # 打开显示器捕获（monitor_index 按 0 基准处理）
                 monitor_index = int(getattr(cfg, 'monitor_index', 0))
@@ -218,19 +300,39 @@ def _scanner_worker_process(command_queue: mp.Queue, status_queue: mp.Queue,
 
                 opened = False
                 if target_hwnd > 0:
-                    opened = capture_manager.open_window(target_hwnd)
-                elif target_title:
-                    opened = capture_manager.open_window(target_title, partial_match=partial)
-                elif target_proc:
-                    opened = capture_manager.open_window(target_proc, partial_match=True)
+                    # 先按HWND尝试
+                    send_status("启动中", "进程扫描", f"正在按HWND初始化: {target_hwnd}")
+                    opened = capture_manager.open_window(target_hwnd, async_init=True)
+                    # 若HWND失败且提供了标题/进程名，则自动回退
+                    if (not opened) and (target_title or target_proc):
+                        send_log("HWND初始化失败，尝试按标题/进程名回退")
+                        send_status("启动中", "进程扫描", "HWND无效，回退按标题/进程名")
+                        if target_title:
+                            opened = capture_manager.open_window(target_title, partial_match=partial, async_init=True)
+                        if (not opened) and target_proc:
+                            opened = capture_manager.open_window(target_proc, partial_match=True, async_init=True)
+                else:
+                    # 没有有效HWND，直接尝试标题/进程名
+                    if target_title:
+                        send_status("启动中", "进程扫描", f"按标题查找: {target_title}")
+                        opened = capture_manager.open_window(target_title, partial_match=partial, async_init=True)
+                    if (not opened) and target_proc:
+                        send_status("启动中", "进程扫描", f"按进程查找: {target_proc}")
+                        opened = capture_manager.open_window(target_proc, partial_match=True, async_init=True)
 
                 if not opened:
                     send_log("窗口捕获初始化失败：请检查 target_hwnd/target_window_title/target_process 配置")
+                    send_status("启动失败", "进程扫描", "无法找到有效窗口", "初始化失败")
                     return False
 
             return True
         except Exception as e:
             send_log(f"捕获管理器初始化异常: {e}")
+            # 将异常同步到状态，便于UI及时显示
+            try:
+                send_status("启动失败", "进程扫描", f"异常: {e}", "初始化失败")
+            except Exception:
+                pass
             return False
 
     def cleanup_capture_manager():
@@ -350,10 +452,13 @@ def _scanner_worker_process(command_queue: mp.Queue, status_queue: mp.Queue,
         if not templates or not capture_manager or cfg is None:
             return 0.0
         
-        # 捕获帧
-        restore_after = getattr(cfg, 'restore_minimized_after_capture', False)
-        img = capture_manager.capture_frame(restore_after_capture=restore_after)
-        
+        # 捕获帧（优先使用共享帧缓存）
+        img = capture_manager.get_shared_frame("scanner_detection", "detection")
+        if img is None:
+            # 如果共享缓存没有，使用传统捕获
+            restore_after = getattr(cfg, 'restore_minimized_after_capture', False)
+            img = capture_manager.capture_frame(restore_after_capture=restore_after)
+
         if img is None:
             return 0.0
         
@@ -512,11 +617,24 @@ class ScannerProcessManager(QObject):
         self._hit_queue: Optional[mp.Queue] = None
         self._log_queue: Optional[mp.Queue] = None
         
-        # 状态轮询定时器
+        # 状态轮询定时器 - 自适应轮询机制
         self._poll_timer = QTimer()
         self._poll_timer.timeout.connect(self._poll_queues)
-        self._poll_timer.setInterval(16)  # 16ms轮询，约60FPS
-        
+
+        # 自适应轮询配置
+        self._base_poll_interval = 100  # 基础轮询间隔100ms
+        self._min_poll_interval = 50    # 最小轮询间隔50ms（活跃时）
+        self._max_poll_interval = 500   # 最大轮询间隔500ms（空闲时）
+        self._current_poll_interval = self._base_poll_interval
+        self._poll_timer.setInterval(self._current_poll_interval)
+
+        # 轮询自适应统计
+        self._poll_stats = {
+            'empty_polls': 0,      # 连续空轮询次数
+            'active_polls': 0,     # 连续活跃轮询次数
+            'last_activity': 0.0   # 上次活动时间
+        }
+
         # 当前状态
         self._running = False
         self._current_config: Optional[AppConfig] = None
@@ -524,17 +642,20 @@ class ScannerProcessManager(QObject):
         self._logger.info("扫描进程管理器初始化完成")
 
     def start_scanning(self, cfg: AppConfig) -> bool:
-        """启动扫描进程"""
+        """启动扫描进程 - 使用线程化启动避免阻塞GUI"""
         if self._running:
             self._logger.warning("扫描进程已在运行")
             return True
 
         try:
+            self._logger.info("开始创建扫描进程...")
+
             # 创建队列
             self._command_queue = mp.Queue()
             self._status_queue = mp.Queue()
             self._hit_queue = mp.Queue()
             self._log_queue = mp.Queue()
+            self._logger.info("队列创建完成")
 
             # 创建进程
             self._process = mp.Process(
@@ -542,27 +663,106 @@ class ScannerProcessManager(QObject):
                 args=(self._command_queue, self._status_queue, self._hit_queue, self._log_queue),
                 daemon=True
             )
+            self._logger.info("进程对象创建完成")
 
-            # 启动进程
-            self._process.start()
-            self._logger.info(f"扫描进程已启动 (PID: {self._process.pid})")
+            # 使用线程启动进程，完全避免阻塞主线程
+            from workers.io_tasks import submit_io, IOTaskBase
 
-            # 启动轮询
-            self._poll_timer.start()
+            class ProcessStartTask(IOTaskBase):
+                def __init__(self, manager, cfg):
+                    super().__init__("process_start")
+                    self.manager = manager
+                    self.cfg = cfg
 
-            # 发送启动命令
-            command = ScannerCommand(command='start', data=cfg, timestamp=time.time())
-            self._command_queue.put(command)
+                def execute(self):
+                    return self.manager._threaded_start_process(self.cfg)
 
-            self._running = True
-            self._current_config = cfg
+            task = ProcessStartTask(self, cfg)
+            submit_io(task,
+                     on_success=self._on_process_started,
+                     on_error=self._on_process_start_error)
 
+            self._logger.info("进程启动任务已提交到IO线程池")
             return True
 
         except Exception as e:
             self._logger.error(f"启动扫描进程失败: {e}")
             self._cleanup_process()
             return False
+
+    def _threaded_start_process(self, cfg: AppConfig):
+        """在IO线程中启动进程"""
+        try:
+            self._logger.info("IO线程中开始启动进程...")
+
+            # 启动进程（在IO线程中执行，不阻塞GUI）
+            import time
+            start_time = time.time()
+
+            self._process.start()
+            startup_time = time.time() - start_time
+
+            pid = self._process.pid
+            self._logger.info(f"进程启动成功，PID: {pid}，耗时: {startup_time:.3f}秒")
+
+            return {"success": True, "pid": pid, "cfg": cfg, "startup_time": startup_time}
+
+        except Exception as e:
+            self._logger.error(f"IO线程中启动进程失败: {e}")
+            import traceback
+            self._logger.debug(f"详细错误: {traceback.format_exc()}")
+            return {"success": False, "error": str(e)}
+
+    def _on_process_started(self, task_id: str, result):
+        """进程启动成功回调（在主线程中执行）"""
+        if result.get("success"):
+            pid = result.get("pid")
+            cfg = result.get("cfg")
+            startup_time = result.get("startup_time", 0)
+
+            self._logger.info(f"扫描进程已启动 (PID: {pid}, 启动耗时: {startup_time:.3f}秒)")
+
+            # 启动轮询
+            self._poll_timer.start()
+            self._logger.info("状态轮询已启动")
+
+            # 立即投递一次“启动中”状态，避免UI长时间停留在“正在创建扫描进程...”
+            try:
+                bootstrap_status = ScannerStatus(
+                    running=True,
+                    status_text="启动中",
+                    backend="进程扫描",
+                    detail="进程已创建，准备发送启动命令",
+                    scan_count=0,
+                    error_message="",
+                    timestamp=time.time()
+                )
+                self.signals.status_updated.emit(bootstrap_status)
+            except Exception:
+                pass
+
+            # 发送启动命令
+            try:
+                command = ScannerCommand(command='start', data=cfg, timestamp=time.time())
+                self._command_queue.put(command)
+                self._logger.info("启动命令已发送到进程")
+            except Exception as e:
+                self._logger.error(f"发送启动命令失败: {e}")
+                self._cleanup_process()
+                return
+
+            self._running = True
+            self._current_config = cfg
+            self._logger.info("扫描进程启动完成")
+        else:
+            error = result.get("error", "未知错误")
+            self._logger.error(f"进程启动失败: {error}")
+            self._cleanup_process()
+
+    def _on_process_start_error(self, task_id: str, error):
+        """进程启动错误回调（在主线程中执行）"""
+        self._logger.error(f"线程化启动扫描进程失败: {error}")
+        self._cleanup_process()
 
     def stop_scanning(self) -> bool:
         """停止扫描进程"""
@@ -645,43 +845,97 @@ class ScannerProcessManager(QObject):
         self._logger.info("扫描进程资源已清理")
 
     def _poll_queues(self):
-        """轮询队列获取结果"""
+        """轮询队列获取结果 - 自适应轮询机制，限量处理避免阻塞UI"""
         try:
-            # 处理状态更新
-            while self._status_queue:
+            current_time = time.time()
+            has_activity = False
+
+            # 每帧处理上限（防止主线程长时间卡在队列清空）
+            MAX_STATUS_PER_TICK = 5
+            MAX_HIT_PER_TICK = 10
+            MAX_LOG_PER_TICK = 20
+
+            # 处理状态更新：仅取本帧的最新若干条，且最终只发射最后一条（合并抖动）
+            latest_status = None
+            processed = 0
+            while self._status_queue and processed < MAX_STATUS_PER_TICK:
                 try:
                     status: ScannerStatus = self._status_queue.get_nowait()
-                    self.signals.status_updated.emit(status)
+                    latest_status = status
+                    processed += 1
+                    has_activity = True
                 except Empty:
                     break
                 except Exception as e:
                     self._logger.debug(f"处理状态更新失败: {e}")
                     break
+            if latest_status is not None:
+                self.signals.status_updated.emit(latest_status)
 
-            # 处理命中结果
-            while self._hit_queue:
+            # 处理命中结果：命中通常不多，限量发射
+            processed = 0
+            while self._hit_queue and processed < MAX_HIT_PER_TICK:
                 try:
                     hit: ScannerHit = self._hit_queue.get_nowait()
                     self.signals.hit_detected.emit(hit)
+                    processed += 1
+                    has_activity = True
                 except Empty:
                     break
                 except Exception as e:
                     self._logger.debug(f"处理命中结果失败: {e}")
                     break
 
-            # 处理日志消息
-            while self._log_queue:
+            # 处理日志消息：日志量可能很大，严格限流
+            processed = 0
+            while self._log_queue and processed < MAX_LOG_PER_TICK:
                 try:
                     log_msg: str = self._log_queue.get_nowait()
                     self.signals.log_message.emit(log_msg)
+                    processed += 1
+                    has_activity = True
                 except Empty:
                     break
                 except Exception as e:
                     self._logger.debug(f"处理日志消息失败: {e}")
                     break
 
+            # 自适应调整轮询频率
+            self._adjust_poll_interval(has_activity, current_time)
+
         except Exception as e:
             self._logger.error(f"轮询队列异常: {e}")
+
+    def _adjust_poll_interval(self, has_activity: bool, current_time: float):
+        """自适应调整轮询间隔"""
+        if has_activity:
+            # 有活动：增加活跃计数，重置空闲计数
+            self._poll_stats['active_polls'] += 1
+            self._poll_stats['empty_polls'] = 0
+            self._poll_stats['last_activity'] = current_time
+
+            # 如果连续活跃，降低轮询间隔
+            if self._poll_stats['active_polls'] >= 3:
+                new_interval = max(self._min_poll_interval,
+                                 self._current_poll_interval - 10)
+                if new_interval != self._current_poll_interval:
+                    self._current_poll_interval = new_interval
+                    self._poll_timer.setInterval(new_interval)
+                    self._logger.debug(f"降低轮询间隔至: {new_interval}ms")
+        else:
+            # 无活动：增加空闲计数，重置活跃计数
+            self._poll_stats['empty_polls'] += 1
+            self._poll_stats['active_polls'] = 0
+
+            # 如果长时间空闲，增加轮询间隔
+            idle_time = current_time - self._poll_stats['last_activity']
+            if self._poll_stats['empty_polls'] >= 10 or idle_time > 5.0:
+                new_interval = min(self._max_poll_interval,
+                                 self._current_poll_interval + 20)
+                if new_interval != self._current_poll_interval:
+                    self._current_poll_interval = new_interval
+                    self._poll_timer.setInterval(new_interval)
+                    self._logger.debug(f"增加轮询间隔至: {new_interval}ms")
 
     def cleanup(self):
         """清理资源"""

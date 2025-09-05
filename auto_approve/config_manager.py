@@ -114,6 +114,12 @@ class AppConfig:
     screen_border_required: bool = False
     # 脏区域模式（暂未实现）
     dirty_region_mode: str = ""
+    
+    # === 自动窗口更新配置 ===
+    # 是否启用根据进程名称自动更新HWND
+    auto_update_hwnd_by_process: bool = False
+    # 自动更新间隔（毫秒）
+    auto_update_hwnd_interval_ms: int = 5000
 
 
 def _default_config_dict() -> Dict[str, Any]:
@@ -230,6 +236,9 @@ def load_config(path: Optional[str] = None) -> AppConfig:
         border_required=_border_required_legacy,
         window_border_required=_window_border_required,
         screen_border_required=_screen_border_required,
+        # 自动窗口更新配置
+        auto_update_hwnd_by_process=bool(data.get("auto_update_hwnd_by_process", False)),
+        auto_update_hwnd_interval_ms=int(data.get("auto_update_hwnd_interval_ms", 5000)),
     )
     return cfg
 
@@ -248,6 +257,9 @@ def save_config(cfg: AppConfig, path: Optional[str] = None) -> str:
             # 若列表为空，确保至少有一个回退路径
             data["template_paths"] = []
     data["coordinate_offset"] = list(cfg.coordinate_offset)
+    # 自动窗口更新配置
+    data["auto_update_hwnd_by_process"] = cfg.auto_update_hwnd_by_process
+    data["auto_update_hwnd_interval_ms"] = cfg.auto_update_hwnd_interval_ms
     config_path = os.path.abspath(path or CONFIG_FILE)
     with open(config_path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)

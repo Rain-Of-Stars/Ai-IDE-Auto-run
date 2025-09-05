@@ -66,9 +66,9 @@ class CustomCheckBox(QtWidgets.QCheckBox):
 
 
 class PlusMinusSpinBox(QtWidgets.QSpinBox):
-    """带“+/-”按钮的SpinBox：
+    """带"+/-"按钮的SpinBox：
     - 隐藏系统默认上下按钮，叠加两个QToolButton来执行 stepUp/stepDown；
-    - 通过右侧内边距与自适应布局，保证点击区域足够大，解决“点击不到”。
+    - 通过右侧内边距与自适应布局，保证点击区域足够大，解决"点击不到"。
     """
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -109,6 +109,12 @@ class PlusMinusSpinBox(QtWidgets.QSpinBox):
         self._btn_plus.setFocusPolicy(QtCore.Qt.NoFocus)
         self._btn_minus.setFocusPolicy(QtCore.Qt.NoFocus)
 
+    def wheelEvent(self, event: QtGui.QWheelEvent) -> None:
+        """彻底禁用鼠标滚轮事件，避免任何系统开销"""
+        # 直接返回，不调用基类实现，事件会被完全忽略
+        # 这样系统不会将滚轮事件传递到事件循环，实现真正的零开销
+        return
+
     def resizeEvent(self, e: QtGui.QResizeEvent) -> None:
         super().resizeEvent(e)
         # 动态定位两个按钮到右侧，垂直上下排列
@@ -127,7 +133,7 @@ class PlusMinusSpinBox(QtWidgets.QSpinBox):
 
 
 class PlusMinusDoubleSpinBox(QtWidgets.QDoubleSpinBox):
-    """带“+/-”按钮的DoubleSpinBox，逻辑同上。"""
+    """带"+/-"按钮的DoubleSpinBox，逻辑同上。"""
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setButtonSymbols(QtWidgets.QAbstractSpinBox.ButtonSymbols.NoButtons)
@@ -161,6 +167,12 @@ class PlusMinusDoubleSpinBox(QtWidgets.QDoubleSpinBox):
 
         self._btn_plus.setFocusPolicy(QtCore.Qt.NoFocus)
         self._btn_minus.setFocusPolicy(QtCore.Qt.NoFocus)
+
+    def wheelEvent(self, event: QtGui.QWheelEvent) -> None:
+        """彻底禁用鼠标滚轮事件，避免任何系统开销"""
+        # 直接返回，不调用基类实现，事件会被完全忽略
+        # 这样系统不会将滚轮事件传递到事件循环，实现真正的零开销
+        return
 
     def resizeEvent(self, e: QtGui.QResizeEvent) -> None:
         super().resizeEvent(e)
@@ -882,6 +894,9 @@ class SettingsDialog(QtWidgets.QDialog):
         self.cb_border_screen = CustomCheckBox("启用屏幕边框"); self.cb_border_screen.setChecked(
             bool(getattr(self.cfg, 'screen_border_required', getattr(self.cfg, 'border_required', False)))
         )
+        # 自动窗口更新相关控件
+        self.cb_auto_update_hwnd = CustomCheckBox("根据进程名称自动更新HWND"); self.cb_auto_update_hwnd.setChecked(getattr(self.cfg, 'auto_update_hwnd_by_process', False))
+        self.sb_auto_update_interval = PlusMinusSpinBox(); self.sb_auto_update_interval.setRange(1000, 60000); self.sb_auto_update_interval.setValue(getattr(self.cfg, 'auto_update_hwnd_interval_ms', 5000)); self.sb_auto_update_interval.setSuffix(" ms")
         self.btn_find_window = QtWidgets.QPushButton("按标题查找窗口")
         self.btn_find_process = QtWidgets.QPushButton("按进程查找窗口")
         self.btn_hwnd_picker = QtWidgets.QPushButton("打开HWND获取工具")
@@ -1144,6 +1159,12 @@ class SettingsDialog(QtWidgets.QDialog):
         form_wgc.addRow(self.cb_restore_minimized)
         form_wgc.addRow(self.cb_restore_after_capture)
         form_wgc.addRow(self.cb_electron_optimization)
+        
+        # 自动窗口更新相关控件
+        sep_auto = QtWidgets.QFrame(); sep_auto.setFrameShape(QtWidgets.QFrame.HLine); sep_auto.setFrameShadow(QtWidgets.QFrame.Sunken)
+        form_wgc.addRow(sep_auto)
+        form_wgc.addRow("自动更新HWND", self.cb_auto_update_hwnd)
+        form_wgc.addRow("更新间隔(ms)", self.sb_auto_update_interval)
 
         # 将内容容器设置到滚动区域
         scroll_area_wgc.setWidget(wgc_content)
@@ -1748,6 +1769,9 @@ class SettingsDialog(QtWidgets.QDialog):
             window_border_required=self.cb_border_window.isChecked(),
             screen_border_required=self.cb_border_screen.isChecked(),
             border_required=(self.cb_border_window.isChecked() or self.cb_border_screen.isChecked()),
+            # 自动窗口更新配置
+            auto_update_hwnd_by_process=self.cb_auto_update_hwnd.isChecked(),
+            auto_update_hwnd_interval_ms=self.sb_auto_update_interval.value(),
         )
         # 写入配置文件，但不关闭窗口
         save_config(cfg)
@@ -1896,8 +1920,8 @@ class SettingsDialog(QtWidgets.QDialog):
             progress.setValue(20)
             QtWidgets.QApplication.processEvents()
 
-            # 打开窗口捕获
-            success = mgr.open_window(hwnd)
+            # 打开窗口捕获 - 使用异步模式避免阻塞GUI
+            success = mgr.open_window(hwnd, async_init=True, timeout=2.0)
             if not success:
                 progress.close()
                 QtWidgets.QMessageBox.warning(self, "捕获失败", "WGC窗口捕获启动失败，请检查窗口句柄是否有效")
@@ -1906,33 +1930,53 @@ class SettingsDialog(QtWidgets.QDialog):
             progress.setValue(50)
             QtWidgets.QApplication.processEvents()
 
-            # 等待一小段时间让WGC稳定
+            # 等待一小段时间让WGC稳定，但允许GUI响应
             import time
-            time.sleep(0.5)
+            for i in range(10):  # 分成10次，每次100ms
+                time.sleep(0.1)
+                QtWidgets.QApplication.processEvents()
+                if progress.wasCanceled():
+                    mgr.close()
+                    return
 
-            # 捕获一帧
-            img = mgr.capture_frame(restore_after_capture=self.cb_restore_after_capture.isChecked())
+            # 使用共享帧缓存获取图像（避免重复捕获）
+            img = mgr.get_shared_frame("test_preview", "test")
             progress.setValue(80)
             QtWidgets.QApplication.processEvents()
 
-            mgr.close()
-            progress.setValue(100)
-            progress.close()
+            if img is None:
+                # 如果共享缓存没有，尝试传统捕获
+                img = mgr.capture_frame(restore_after_capture=self.cb_restore_after_capture.isChecked())
+
+            progress.setValue(90)
+            QtWidgets.QApplication.processEvents()
 
             if img is None:
+                mgr.close()
+                progress.setValue(100)
+                progress.close()
                 QtWidgets.QMessageBox.warning(self, "捕获失败", "窗口捕获失败，建议增加超时时间或检查窗口状态")
                 return
 
             # 检查图像是否为空或全黑
             h, w = img.shape[:2]
             if h == 0 or w == 0:
+                mgr.release_shared_frame("test_preview")
+                mgr.close()
+                progress.setValue(100)
+                progress.close()
                 QtWidgets.QMessageBox.warning(self, "捕获失败", "捕获的图像尺寸为0")
                 return
 
-            # 检查是否为全黑图像
-            if np.all(img == 0):
+            # 检查是否为全黑图像（使用更准确的检测）
+            mean_value = np.mean(img)
+            if mean_value < 1.0:
+                mgr.release_shared_frame("test_preview")
+                mgr.close()
+                progress.setValue(100)
+                progress.close()
                 QtWidgets.QMessageBox.warning(self, "捕获警告",
-                    f"捕获成功但图像为全黑，尺寸: {w}×{h}\n"
+                    f"捕获成功但图像疑似为全黑，尺寸: {w}×{h}，平均值: {mean_value:.2f}\n"
                     "可能原因：\n"
                     "1. 目标窗口被最小化或隐藏\n"
                     "2. 目标窗口内容为空\n"
@@ -1940,8 +1984,11 @@ class SettingsDialog(QtWidgets.QDialog):
                     "建议检查目标窗口状态")
                 return
 
-            # 预览/保存
-            self._show_capture_result(img, "窗口捕获测试结果")
+            progress.setValue(100)
+            progress.close()
+
+            # 预览/保存（使用共享内存，不关闭捕获会话）
+            self._show_capture_result_shared(img, "窗口捕获测试结果", mgr, "test_preview")
 
         except ImportError:
             QtWidgets.QMessageBox.critical(self, "依赖缺失", "WGC功能需要: pip install windows-capture-python")
@@ -2060,6 +2107,60 @@ class SettingsDialog(QtWidgets.QDialog):
                     QtWidgets.QMessageBox.warning(self, "保存失败", "无法保存图片文件")
 
         except Exception as e:
+            QtWidgets.QMessageBox.warning(self, "显示错误", f"图像显示失败: {e}")
+
+    def _show_capture_result_shared(self, img, title, capture_manager, user_id):
+        """显示共享捕获结果的方法（延迟释放资源）。"""
+        try:
+            import cv2
+            import numpy as np
+
+            # 确保图像数据连续
+            if not img.flags['C_CONTIGUOUS']:
+                img = np.ascontiguousarray(img)
+
+            rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            h, w = rgb.shape[:2]
+
+            # 创建QImage时指定正确的格式和步长
+            bytes_per_line = rgb.strides[0] if rgb.strides else w * 3
+            qimg = QtGui.QImage(rgb.data, w, h, bytes_per_line, QtGui.QImage.Format_RGB888)
+
+            if qimg.isNull():
+                capture_manager.release_shared_frame(user_id)
+                capture_manager.close()
+                QtWidgets.QMessageBox.warning(self, "显示失败", "无法创建预览图像")
+                return
+
+            pm = QtGui.QPixmap.fromImage(qimg)
+            if pm.isNull():
+                capture_manager.release_shared_frame(user_id)
+                capture_manager.close()
+                QtWidgets.QMessageBox.warning(self, "显示失败", "无法创建预览像素图")
+                return
+
+            dlg = ScreenshotPreviewDialog(pm, self, is_wgc_test=True)
+            dlg.setWindowTitle(title)
+
+            # 用户交互完成后再释放资源
+            try:
+                if dlg.exec() == QtWidgets.QDialog.Accepted:
+                    import time
+                    path = f"capture_test_{int(time.time())}.png"
+                    success = cv2.imwrite(path, img)
+                    if success:
+                        QtWidgets.QMessageBox.information(self, "保存成功", f"图片已保存: {path}")
+                    else:
+                        QtWidgets.QMessageBox.warning(self, "保存失败", "无法保存图片文件")
+            finally:
+                # 确保在用户完成所有操作后释放资源
+                capture_manager.release_shared_frame(user_id)
+                capture_manager.close()
+
+        except Exception as e:
+            # 发生异常时也要释放资源
+            capture_manager.release_shared_frame(user_id)
+            capture_manager.close()
             QtWidgets.QMessageBox.warning(self, "显示错误", f"图像显示失败: {e}")
 
     def _on_preview_window_capture(self):

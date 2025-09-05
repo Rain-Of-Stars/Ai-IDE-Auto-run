@@ -43,6 +43,9 @@ from auto_approve.ui_enhancements import UIEnhancementManager
 from auto_approve.ui_optimizer import TrayMenuOptimizer, get_performance_throttler
 from auto_approve.performance_config import get_performance_config, apply_performance_optimizations
 from auto_approve.settings_dialog import SettingsDialog
+from auto_approve.gui_responsiveness_manager import get_gui_responsiveness_manager, register_ui_handler, UIUpdateRequest
+from auto_approve.gui_performance_monitor import get_gui_performance_monitor, start_gui_monitoring, record_ui_update
+from auto_approve.auto_hwnd_updater import AutoHWNDUpdater
 # from auto_approve.screen_list_dialog import show_screen_list_dialog  # 右键菜单不再提供入口
 
 # 导入多线程任务模块
@@ -121,9 +124,16 @@ class RefactoredTrayApp(QtWidgets.QSystemTrayIcon):
         # 工作线程和任务管理
         self.worker: Optional["ScannerWorker"] = None
         self.settings_dlg: Optional[SettingsDialog] = None
+        
+        # 自动窗口句柄更新器
+        self.auto_hwnd_updater = AutoHWNDUpdater()
+        self.auto_hwnd_updater.hwnd_updated.connect(self._on_hwnd_auto_updated)
 
         # 初始化多线程基础设施
         self._init_threading_infrastructure()
+
+        # 初始化GUI响应性管理器
+        self._init_gui_responsiveness()
 
         # 创建UI
         self._create_menu()
@@ -141,12 +151,12 @@ class RefactoredTrayApp(QtWidgets.QSystemTrayIcon):
     def _init_threading_infrastructure(self):
         """初始化多线程基础设施"""
         with PerformanceTimer("多线程基础设施初始化"):
-            # 优化IO线程池
-            optimize_thread_pool(cpu_intensive_ratio=0.2)  # 主要是IO任务
+            # 优化IO线程池 - 启用GUI优先模式
+            optimize_thread_pool(cpu_intensive_ratio=0.2, gui_priority=True)  # 主要是IO任务，GUI优先
 
-            # 启动CPU任务管理器
-            cpu_manager = get_global_cpu_manager()
-            cpu_manager.start()
+            # 延迟启动CPU任务管理器 - 避免在初始化时启动进程
+            # CPU任务管理器将在需要时才启动
+            self._cpu_manager_started = False
 
             # 设置qasync事件循环（如果可用）
             if QASYNC_AVAILABLE:
@@ -159,6 +169,80 @@ class RefactoredTrayApp(QtWidgets.QSystemTrayIcon):
             else:
                 self.async_loop = None
                 self.logger.info("qasync不可用，异步功能已禁用")
+
+    def _init_gui_responsiveness(self):
+        """初始化GUI响应性管理器"""
+        with PerformanceTimer("GUI响应性管理器初始化"):
+            # 获取GUI响应性管理器
+            self.gui_manager = get_gui_responsiveness_manager()
+
+            # 注册UI更新处理器
+            register_ui_handler('tooltip', self._handle_tooltip_update)
+            register_ui_handler('status', self._handle_status_update)
+            register_ui_handler('menu', self._handle_menu_update)
+
+            # 连接响应性警告信号
+            self.gui_manager.responsiveness_warning.connect(self._on_responsiveness_warning)
+
+            # 初始化GUI性能监控器
+            self.performance_monitor = get_gui_performance_monitor()
+            self.performance_monitor.performance_alert.connect(self._on_performance_alert)
+            self.performance_monitor.responsiveness_changed.connect(self._on_responsiveness_changed)
+
+            # 启动性能监控
+            start_gui_monitoring()
+
+            self.logger.info("GUI响应性管理器和性能监控器已初始化")
+
+    def _handle_tooltip_update(self, request: UIUpdateRequest):
+        """处理工具提示更新"""
+        try:
+            tooltip_text = request.data.get('text', '')
+            if tooltip_text != self.toolTip():
+                self.setToolTip(tooltip_text)
+                # 记录UI更新
+                record_ui_update()
+        except Exception as e:
+            self.logger.error(f"更新工具提示失败: {e}")
+
+    def _handle_status_update(self, request: UIUpdateRequest):
+        """处理状态更新"""
+        try:
+            # 这里可以处理状态栏或其他状态显示的更新
+            pass
+        except Exception as e:
+            self.logger.error(f"更新状态失败: {e}")
+
+    def _handle_menu_update(self, request: UIUpdateRequest):
+        """处理菜单更新"""
+        try:
+            # 这里可以处理菜单项的更新
+            pass
+        except Exception as e:
+            self.logger.error(f"更新菜单失败: {e}")
+
+    def _on_responsiveness_warning(self, response_time: float):
+        """响应性警告处理"""
+        self.logger.warning(f"GUI响应缓慢警告: {response_time:.2f}秒")
+
+    def _on_performance_alert(self, alert_type: str, value: float):
+        """性能警告处理"""
+        if alert_type == "high_cpu":
+            self.logger.warning(f"主线程CPU使用率过高: {value:.1f}%")
+        elif alert_type == "high_memory":
+            self.logger.warning(f"内存使用过高: {value:.1f}MB")
+        elif alert_type == "slow_response":
+            self.logger.warning(f"GUI响应时间过长: {value:.1f}ms")
+        elif alert_type == "high_latency":
+            self.logger.warning(f"事件循环延迟过高: {value:.1f}ms")
+
+    def _on_responsiveness_changed(self, is_responsive: bool):
+        """响应性状态变化处理"""
+        if not is_responsive:
+            self.logger.warning("GUI响应性下降")
+            # 可以在这里触发自动优化措施
+        else:
+            self.logger.info("GUI响应性恢复")
 
     def _create_menu(self):
         """创建托盘菜单 - 确保在主线程执行"""
@@ -254,14 +338,29 @@ class RefactoredTrayApp(QtWidgets.QSystemTrayIcon):
             # 更新工具提示
             self.setToolTip("AI-IDE-Auto-Run - 就绪")
 
+            # 延迟启动CPU任务管理器 - 在主线程空闲时启动
+            QtCore.QTimer.singleShot(500, self._start_cpu_manager)
+
             # 根据配置：启动后自动开始扫描（修复“启动后自动开始扫描”开关失效）
             try:
                 if getattr(self.cfg, 'auto_start_scan', False):
                     self.logger.info("检测到 auto_start_scan=True，启动应用后自动开始扫描")
                     # 放到下一个事件循环，避免阻塞初始化
-                    QtCore.QTimer.singleShot(0, self.start_scanning)
+                    QtCore.QTimer.singleShot(1000, self.start_scanning)  # 延迟到CPU管理器启动后
             except Exception as e:
                 self.logger.warning(f"自动开始扫描触发失败: {e}")
+
+    def _start_cpu_manager(self):
+        """延迟启动CPU任务管理器"""
+        if not self._cpu_manager_started:
+            try:
+                with PerformanceTimer("CPU任务管理器启动"):
+                    cpu_manager = get_global_cpu_manager()
+                    cpu_manager.start()
+                    self._cpu_manager_started = True
+                    self.logger.info("CPU任务管理器已延迟启动")
+            except Exception as e:
+                self.logger.error(f"启动CPU任务管理器失败: {e}")
 
 
     def _load_menu_icons_async(self):
@@ -355,37 +454,114 @@ class RefactoredTrayApp(QtWidgets.QSystemTrayIcon):
     # ==================== 核心业务逻辑 ====================
 
     def start_scanning(self):
-        """开始扫描 - 在主线程执行"""
-        with PerformanceTimer("开始扫描"):
-            if self.worker and self.worker.isRunning():
-                self.logger.warning("扫描已在运行中")
-                return
+        """开始扫描 - 异步启动避免阻塞GUI"""
+        if self.worker and self.worker.isRunning():
+            self.logger.warning("扫描已在运行中")
+            return
 
-            try:
-                # 延迟导入扫描器 - 使用独立进程版本
-                from auto_approve.scanner_process_adapter import ProcessScannerWorker
+        # 立即更新UI状态，给用户反馈
+        self.act_start.setChecked(True)
+        self.act_stop.setChecked(False)
+        self._update_status("启动中", "进程", "正在创建扫描进程...")
 
-                # 创建新的扫描器实例（进程版）
-                self.worker = ProcessScannerWorker(self.cfg)
+        # 异步启动扫描进程，避免阻塞GUI
+        QtCore.QTimer.singleShot(0, self._async_start_scanning)
+
+    def _async_start_scanning(self):
+        """异步启动扫描进程的实际实现"""
+        try:
+            with PerformanceTimer("异步启动扫描进程"):
+                # 选择扫描后端：默认进程版；设置环境变量 SCANNER_BACKEND=thread 可启用线程版
+                backend_env = os.environ.get('SCANNER_BACKEND', '').strip().lower()
+                if backend_env == 'thread':
+                    from auto_approve.pipeline_workers import ThreadScannerAdapter as _Scanner
+                    backend_name = '线程'
+                else:
+                    # 修正：进程后端应导入 ProcessScannerWorker（ScannerProcessAdapter 的子类）
+                    from auto_approve.scanner_process_adapter import ProcessScannerWorker as _Scanner
+                    backend_name = '进程'
+
+                self.logger.info("创建扫描器实例...")
+                # 创建新的扫描器实例（按后端类型）
+                self.worker = _Scanner(self.cfg)
 
                 # 连接信号
                 self.worker.sig_status.connect(self._on_status_update)
                 self.worker.sig_hit.connect(self._on_hit_detected)
                 self.worker.sig_log.connect(self._on_log_message)
 
+                self.logger.info("启动扫描器...")
                 # 启动扫描器
                 self.worker.start()
 
-                # 更新UI状态
-                self.act_start.setChecked(True)
-                self.act_stop.setChecked(False)
-                self._update_status("运行中", "WGC", "正在初始化...")
+                # 设置启动超时检查（增加到30秒）
+                self._start_timeout_timer = QtCore.QTimer()
+                self._start_timeout_timer.setSingleShot(True)
+                self._start_timeout_timer.timeout.connect(self._on_start_timeout)
+                self._start_timeout_timer.start(30000)  # 30秒超时
 
-                self.logger.info("扫描已启动（独立进程模式）")
+                # 设置进度提示定时器
+                self._progress_timer = QtCore.QTimer()
+                self._progress_timer.timeout.connect(self._update_start_progress)
+                self._progress_counter = 0
+                self._progress_timer.start(2000)  # 每2秒更新一次进度
 
-            except Exception as e:
-                self.logger.error(f"启动扫描失败: {e}")
-                self._show_error_notification("启动失败", f"无法启动扫描: {e}")
+                self.logger.info(f"扫描已启动（{backend_name}模式）")
+
+        except Exception as e:
+            self.logger.error(f"启动扫描失败: {e}")
+            import traceback
+            self.logger.debug(f"详细错误: {traceback.format_exc()}")
+            self._show_error_notification("启动失败", f"无法启动扫描: {e}")
+
+            # 恢复UI状态
+            self.act_start.setChecked(False)
+            self.act_stop.setChecked(True)
+            self._update_status("启动失败", "-", f"错误: {e}")
+
+    def _update_start_progress(self):
+        """更新启动进度提示"""
+        self._progress_counter += 1
+
+        progress_messages = [
+            "正在创建扫描进程...",
+            "正在初始化捕获管理器...",
+            "正在配置WGC后端...",
+            "正在加载模板文件...",
+            "正在启动扫描循环...",
+            "即将完成启动..."
+        ]
+
+        if self._progress_counter < len(progress_messages):
+            message = progress_messages[self._progress_counter]
+            self._update_status("启动中", "进程", message)
+        else:
+            # 超过预期步骤，显示等待信息
+            elapsed = self._progress_counter * 2
+            self._update_status("启动中", "进程", f"启动中，已等待{elapsed}秒...")
+
+    def _on_start_timeout(self):
+        """启动超时处理"""
+        self.logger.warning("扫描进程启动超时（30秒）")
+
+        # 停止进度定时器
+        if hasattr(self, '_progress_timer') and self._progress_timer.isActive():
+            self._progress_timer.stop()
+
+        self._show_error_notification("启动超时", "扫描进程启动超过30秒，建议运行优化工具")
+
+        # 尝试停止并重置
+        if self.worker:
+            try:
+                self.worker.stop()
+                self.worker = None
+            except:
+                pass
+
+        # 恢复UI状态
+        self.act_start.setChecked(False)
+        self.act_stop.setChecked(True)
+        self._update_status("启动超时", "-", "运行 python tools/optimize_scanner_startup.py")
 
     def stop_scanning(self):
         """停止扫描 - 在主线程执行"""
@@ -464,6 +640,10 @@ class RefactoredTrayApp(QtWidgets.QSystemTrayIcon):
         """退出应用 - 在主线程执行"""
         with PerformanceTimer("应用退出"):
             try:
+                # 停止自动窗口句柄更新器
+                if self.auto_hwnd_updater.is_running():
+                    self.auto_hwnd_updater.stop()
+                
                 # 停止扫描
                 if self.worker and self.worker.isRunning():
                     self.stop_scanning()
@@ -485,9 +665,10 @@ class RefactoredTrayApp(QtWidgets.QSystemTrayIcon):
     def _cleanup_threading_resources(self):
         """清理多线程资源"""
         try:
-            # 停止CPU任务管理器
-            cpu_manager = get_global_cpu_manager()
-            cpu_manager.stop()
+            # 停止CPU任务管理器（仅在已启动时）
+            if getattr(self, '_cpu_manager_started', False):
+                cpu_manager = get_global_cpu_manager()
+                cpu_manager.stop()
 
             # 清理IO线程池
             from workers.io_tasks import cleanup_thread_pool
@@ -512,6 +693,15 @@ class RefactoredTrayApp(QtWidgets.QSystemTrayIcon):
 
     def _on_status_update(self, status: str):
         """状态更新处理 - 在主线程执行"""
+        # 如果收到状态更新，说明进程启动成功，取消超时定时器和进度定时器
+        if hasattr(self, '_start_timeout_timer') and self._start_timeout_timer.isActive():
+            self._start_timeout_timer.stop()
+            self.logger.info("收到状态更新，取消启动超时定时器")
+
+        if hasattr(self, '_progress_timer') and self._progress_timer.isActive():
+            self._progress_timer.stop()
+            self.logger.info("收到状态更新，停止进度提示")
+
         # 解析状态信息
         parts = status.split(" | ")
         if len(parts) >= 3:
@@ -542,9 +732,21 @@ class RefactoredTrayApp(QtWidgets.QSystemTrayIcon):
         """配置保存处理 - 在主线程执行
         需求实现：
         1) 保存后配置立即生效；
-        2) 若当前未在扫描，保存后自动开始扫描（无需手动点“开始扫描”）。
+        2) 若当前未在扫描，保存后自动开始扫描（无需手动点"开始扫描"）。
+        3) 更新自动窗口句柄更新器配置
         """
         self.cfg = new_config
+        
+        # 更新自动窗口句柄更新器配置
+        self.auto_hwnd_updater.set_config(new_config)
+        if new_config.auto_update_hwnd_by_process:
+            if not self.auto_hwnd_updater.is_running():
+                self.auto_hwnd_updater.start()
+                self.logger.info("自动窗口句柄更新器已启动")
+        else:
+            if self.auto_hwnd_updater.is_running():
+                self.auto_hwnd_updater.stop()
+                self.logger.info("自动窗口句柄更新器已停止")
 
         # 如果扫描器正在运行，直接热更新配置
         if self.worker and self.worker.isRunning():
@@ -552,7 +754,7 @@ class RefactoredTrayApp(QtWidgets.QSystemTrayIcon):
             self.logger.info("配置已更新并已热应用到正在运行的扫描器")
             return
 
-        # 若当前未运行，根据策略自动启动扫描（满足“保存后直接开始抓捕”）
+        # 若当前未运行，根据策略自动启动扫描（满足"保存后直接开始抓捕"）
         try:
             # 为满足用户诉求，这里直接在保存后启动；使用单Shot避免阻塞UI线程
             QtCore.QTimer.singleShot(0, self.start_scanning)
@@ -564,6 +766,29 @@ class RefactoredTrayApp(QtWidgets.QSystemTrayIcon):
         """日志开关变化处理 - 在主线程执行"""
         self.act_logging.setChecked(enabled)
         enable_file_logging(enabled)
+        
+    def _on_hwnd_auto_updated(self, hwnd: int, process_name: str):
+        """自动窗口句柄更新处理"""
+        try:
+            # 更新配置中的目标HWND
+            self.cfg.target_hwnd = hwnd
+            
+            # 如果扫描器正在运行，更新其配置
+            if self.worker and self.worker.isRunning():
+                self.worker.update_config(self.cfg)
+                self.logger.info(f"自动更新扫描器HWND：{hwnd} (进程: {process_name})")
+            else:
+                self.logger.info(f"自动更新目标窗口HWND：{hwnd} (进程: {process_name})")
+                
+            # 显示通知
+            self.notify_with_custom_icon(
+                "窗口句柄已更新",
+                f"检测到进程 {os.path.basename(process_name)}，HWND已更新为 {hwnd}",
+                msecs=2000
+            )
+            
+        except Exception as e:
+            self.logger.error(f"自动窗口句柄更新处理失败: {e}")
 
     def _on_activated(self, reason):
         """托盘图标激活处理"""
@@ -606,11 +831,19 @@ class RefactoredTrayApp(QtWidgets.QSystemTrayIcon):
         self.act_backend.setText(f"后端: {backend}")
         self.act_detail.setText(detail)
 
-        # 更新工具提示
+        # 更新工具提示 - 使用GUI响应性管理器
         tooltip = f"AI-IDE-Auto-Run - {status}"
         if detail:
             tooltip += f"\n{detail}"
-        self.setToolTip(tooltip)
+
+        # 使用GUI响应性管理器调度更新
+        from auto_approve.gui_responsiveness_manager import schedule_ui_update
+        schedule_ui_update(
+            widget_id='tray_tooltip',
+            update_type='tooltip',
+            data={'text': tooltip},
+            priority=5 if critical_transition else 3  # 关键状态变化优先级更高
+        )
 
     def _save_config_async(self):
         """异步保存配置"""
@@ -768,6 +1001,17 @@ def main():
     app_timer = QElapsedTimer()
     app_timer.start()
 
+    # 注册清理函数
+    import atexit
+    def cleanup_on_exit():
+        try:
+            from capture import cleanup_global_cache_manager
+            cleanup_global_cache_manager()
+        except Exception as e:
+            print(f"清理缓存管理器失败: {e}")
+
+    atexit.register(cleanup_on_exit)
+
     # 创建应用
     app = QtWidgets.QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
@@ -800,6 +1044,11 @@ def main():
         # 记录启动完成时间
         startup_time = app_timer.elapsed()
         print(f"✅ 应用启动完成，总耗时: {startup_time}ms")
+
+        # 测试模式：3秒后自动退出
+        if os.environ.get('TEST_MODE') == '1':
+            print("测试模式：3秒后自动退出...")
+            QtCore.QTimer.singleShot(3000, tray_app.quit)
 
         # 启动事件循环
         if QASYNC_AVAILABLE and hasattr(tray_app, 'async_loop'):
