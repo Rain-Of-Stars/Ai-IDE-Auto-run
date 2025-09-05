@@ -82,20 +82,41 @@ class ScannerProcessSignals(QObject):
 
 
 def _load_templates_from_paths(template_paths: List[str]) -> List[Tuple[np.ndarray, Tuple[int, int]]]:
-    """加载模板图像"""
-    templates = []
-    for path in template_paths:
-        try:
-            if os.path.exists(path):
-                # 使用cv2.imdecode处理中文路径
-                img_data = np.fromfile(path, dtype=np.uint8)
-                template = cv2.imdecode(img_data, cv2.IMREAD_COLOR)
-                if template is not None:
-                    h, w = template.shape[:2]
-                    templates.append((template, (w, h)))
-        except Exception as e:
-            print(f"加载模板失败 {path}: {e}")
-    return templates
+    """加载模板图像 - 使用内存模板管理器避免磁盘IO"""
+    try:
+        # 导入内存模板管理器
+        import sys
+        import os
+        sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        from utils.memory_template_manager import get_template_manager
+
+        # 获取模板管理器并加载模板
+        template_manager = get_template_manager()
+        template_manager.load_templates(template_paths)
+
+        # 从内存获取模板数据
+        templates = template_manager.get_templates(template_paths)
+
+        print(f"从内存加载了 {len(templates)} 个模板")
+        return templates
+
+    except Exception as e:
+        print(f"内存模板管理器加载失败，回退到传统方式: {e}")
+
+        # 回退到传统的磁盘加载方式
+        templates = []
+        for path in template_paths:
+            try:
+                if os.path.exists(path):
+                    # 使用cv2.imdecode处理中文路径
+                    img_data = np.fromfile(path, dtype=np.uint8)
+                    template = cv2.imdecode(img_data, cv2.IMREAD_COLOR)
+                    if template is not None:
+                        h, w = template.shape[:2]
+                        templates.append((template, (w, h)))
+            except Exception as e:
+                print(f"加载模板失败 {path}: {e}")
+        return templates
 
 
 def _template_matching(roi_img: np.ndarray, templates: List[Tuple[np.ndarray, Tuple[int, int]]], 
